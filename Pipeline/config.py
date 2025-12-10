@@ -17,7 +17,7 @@ import torch
 # Определяем константы для путей, чтобы избежать "магических строк" в коде.
 # Работаем из директории Best/, поэтому корень проекта - родительская директория
 PROJECT_ROOT = Path(__file__).parent.parent
-DATA_ROOT = PROJECT_ROOT / "Chisco"
+DATA_ROOT = PROJECT_ROOT
 JSON_DIR = DATA_ROOT / "json"
 PREPROCESSED_DIR = DATA_ROOT / "derivatives/preprocessed_pkl"
 
@@ -47,7 +47,7 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
     return {
         'data': {
             'data_dir': PREPROCESSED_DIR,
-            'subject_ids': ['sub-01', 'sub-02'],  # 'sub-03', 'sub-04', 'sub-05'
+            'subject_ids': ['sub-04'],  # 'sub-03', 'sub-04', 'sub-05'
             'task': 'imagine',
             'normalize': 'zscore_hybrid',  # Phase 4B-6: Hybrid normalization (subject centering + global scaling)
             'exclude_channels': [124],

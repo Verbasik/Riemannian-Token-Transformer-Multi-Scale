@@ -36,13 +36,13 @@ def main():
 
     # Build components
     print("\n[1/4] Загрузка данных...")
-    train_loader, val_loader, train_labels, n_channels = build_loaders(cfg)
+    train_loader, val_loader, train_labels, n_channels, n_subjects = build_loaders(cfg)
     print(f"✅ Train samples: {len(train_loader.dataset)}")
     print(f"✅ Val samples: {len(val_loader.dataset)}")
     print(f"✅ Effective channels: {n_channels}")
 
     print("\n[2/4] Создание модели...")
-    model = build_model(cfg, n_channels).to(device)
+    model = build_model(cfg, n_channels, n_subjects).to(device)
     print(f"✅ Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     print("\n[3/4] Создание criterion и optimizer...")
@@ -54,11 +54,17 @@ def main():
     print("\n[4/4] Запуск 1 epoch обучения...")
     model.train()
     total_loss = 0.0
+    use_subject_embed = hasattr(model, 'use_subject_embed') and model.use_subject_embed
     for i, batch in enumerate(train_loader):
         eeg, labels = batch['eeg'].to(device), batch['label'].to(device)
         optimizer.zero_grad(set_to_none=True)
 
-        logits = model(eeg)
+        if use_subject_embed:
+            subject_ids = batch['subject_id'].to(device)
+            logits = model(eeg, subject_ids=subject_ids)
+        else:
+            logits = model(eeg)
+
         loss = criterion(logits, labels)
         loss.backward()
 
