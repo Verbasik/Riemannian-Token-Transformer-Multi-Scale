@@ -15,7 +15,7 @@ from typing import Any, Dict, Tuple
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 
 # Импорт компонентов из доменных модулей
 from config import default_config
@@ -75,11 +75,39 @@ def build_loaders(cfg: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, np.ndarr
         )
         dataset.norm_stats = {'mean': mean_c, 'std': std_c}
     
-    train_loader = DataLoader(
-        ChiscoSubset(dataset, train_idx), batch_size=cfg['training']['batch_size'],
-        shuffle=True, num_workers=cfg['training']['num_workers'],
-        pin_memory=cfg['training']['pin_memory']
-    )
+    # Train loader: optional class-balanced sampling without dropping data
+    train_subset = ChiscoSubset(dataset, train_idx)
+    use_sampler = cfg['training'].get('use_weighted_sampler', False)
+    # Disable sampler when using CB-Focal unless explicitly allowed
+    if cfg['loss'].get('type') == 'cb_focal' and not cfg['training'].get('allow_sampler_with_cb_focal', False):
+        use_sampler = False
+
+    if use_sampler:
+        n_classes = cfg['model']['n_classes']
+        train_labels_arr = labels[train_idx]
+        class_counts = np.bincount(train_labels_arr, minlength=n_classes)
+        # w_c = total / (num_classes * count_c)
+        weights_per_class = (len(train_labels_arr) / (n_classes * np.clip(class_counts, 1, None))).astype(np.float64)
+        sample_weights = weights_per_class[train_labels_arr]
+        sampler = WeightedRandomSampler(
+            weights=torch.as_tensor(sample_weights, dtype=torch.double),
+            num_samples=len(train_idx),
+            replacement=True
+        )
+        train_loader = DataLoader(
+            train_subset,
+            batch_size=cfg['training']['batch_size'],
+            sampler=sampler,
+            shuffle=False,
+            num_workers=cfg['training']['num_workers'],
+            pin_memory=cfg['training']['pin_memory']
+        )
+    else:
+        train_loader = DataLoader(
+            train_subset, batch_size=cfg['training']['batch_size'],
+            shuffle=True, num_workers=cfg['training']['num_workers'],
+            pin_memory=cfg['training']['pin_memory']
+        )
     val_loader = DataLoader(
         ChiscoSubset(dataset, val_idx), batch_size=cfg['training']['batch_size'],
         shuffle=False, num_workers=cfg['training']['num_workers'],

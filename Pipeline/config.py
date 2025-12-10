@@ -82,6 +82,8 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
             'grad_clip': 1.0,
             'num_workers': 4 if device == 'cuda' else 0,
             'pin_memory': device == 'cuda',
+            'use_weighted_sampler': False,           # A1: по умолчанию отключен (см. A2)
+            'allow_sampler_with_cb_focal': False,    # запрет сочетания sampler + CB-Focal
         },
         'cv': {'n_splits': 5, 'random_state': RANDOM_SEED},
         'optimizer': {'name': 'adamw', 'betas': [0.9, 0.999]},
