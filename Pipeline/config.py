@@ -87,8 +87,10 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
         },
         'cv': {'n_splits': 5, 'random_state': RANDOM_SEED},
         'optimizer': {'name': 'adamw', 'betas': [0.9, 0.999]},
+        # Дефолт: настройки из A2 (лучшие на DS1)
         'scheduler': {'name': 'cosine', 'T_max': 20, 'warmup_epochs': 3},
-        'loss': {'type': 'cb_focal', 'beta': 0.9999, 'gamma': 1.5},
+        # D1: фиксируем лучшие гиперпараметры A2
+        'loss': {'type': 'cb_focal', 'beta': 0.999, 'gamma': 1.75},
         'seed': RANDOM_SEED,
         'device': device,
         'checkpoint_dir': f'Train/checkpoints/phase4b_5subjects_{device.upper()}',

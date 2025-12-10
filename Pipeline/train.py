@@ -53,7 +53,9 @@ def build_loaders(cfg: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, np.ndarr
     splits = get_stratified_cv_splits(
         labels, cfg['cv']['n_splits'], cfg['cv']['random_state']
     )
-    train_idx, val_idx = splits[0]
+    fold_index = int(cfg.get('cv', {}).get('fold_index', 0))
+    fold_index = max(0, min(fold_index, len(splits) - 1))
+    train_idx, val_idx = splits[fold_index]
 
     # Compute normalization statistics based on mode
     if cfg['data']['normalize'] == 'zscore_hybrid':
