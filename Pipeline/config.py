@@ -66,11 +66,12 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
             'n_layers': 2,
             'dropout': 0.1,
             'eps': EPSILON,
-            'attn_heads': 1,
-            'gating': False,
+            'attn_heads': 1,  # A2/A5: лучший результат на DS1 при 1 голове
+            'gating': False,  # A4/A5: по умолчанию выкл., т.к. не улучшает f1_macro
             'cov_type': 'corr',
             'use_subject_embed': True,     # Phase 4B-6: Subject embeddings ENABLED
             'subject_embed_dim': 16,       # Embedding dimension
+            'subject_embed_dropout': 0.0,  # A6: dropout на subject embedding (0.0; варианты: 0.1, 0.2)
         },
         'training': {
             'n_epochs': 50,
@@ -86,7 +87,11 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
             'allow_sampler_with_cb_focal': False,    # запрет сочетания sampler + CB-Focal
         },
         'cv': {'n_splits': 5, 'random_state': RANDOM_SEED},
-        'optimizer': {'name': 'adamw', 'betas': [0.9, 0.999]},
+        'optimizer': {
+            'name': 'adamw', 'betas': [0.9, 0.999],
+            # A6: отдельный weight_decay для subject embeddings (по умолчанию совпадает)
+            'subject_embed_weight_decay': 1e-4,
+        },
         # Дефолт: настройки из A2 (лучшие на DS1)
         'scheduler': {'name': 'cosine', 'T_max': 20, 'warmup_epochs': 3},
         # D1: фиксируем лучшие гиперпараметры A2

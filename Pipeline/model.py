@@ -43,6 +43,7 @@ class RTTMultiScale(nn.Module):
         gating: bool, cov_type: str, use_spd_augment: bool = False,
         spd_jitter_std: float = 0.05, spd_jitter_prob: float = 0.5,
         use_subject_embed: bool = False, n_subjects: int = 5, subject_embed_dim: int = 16,
+        subject_embed_dropout: float = 0.0,
     ):
         super().__init__()
         self.ws_s, self.st_s = window_size_small, stride_small
@@ -57,6 +58,7 @@ class RTTMultiScale(nn.Module):
         # Subject embedding layer (optional)
         if self.use_subject_embed:
             self.subject_embed = nn.Embedding(n_subjects, subject_embed_dim)
+            self.subject_embed_drop = nn.Dropout(subject_embed_dropout) if subject_embed_dropout and subject_embed_dropout > 0 else nn.Identity()
             classifier_input_dim = d_model * 2 + subject_embed_dim
         else:
             classifier_input_dim = d_model * 2
@@ -148,6 +150,7 @@ class RTTMultiScale(nn.Module):
             if subject_ids is None:
                 raise ValueError("subject_ids required when use_subject_embed=True")
             subject_emb = self.subject_embed(subject_ids)  # [B, subject_embed_dim]
+            subject_emb = self.subject_embed_drop(subject_emb)
             combined = torch.cat([combined, subject_emb], dim=-1)
 
         return self.head(combined)

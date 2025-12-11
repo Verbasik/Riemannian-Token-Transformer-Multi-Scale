@@ -137,7 +137,8 @@ def build_model(cfg: Dict[str, Any], n_channels: int, n_subjects: int) -> nn.Mod
         cov_type=m_cfg.get('cov_type', 'corr'),
         use_subject_embed=m_cfg.get('use_subject_embed', False),
         n_subjects=n_subjects,
-        subject_embed_dim=m_cfg.get('subject_embed_dim', 16)
+        subject_embed_dim=m_cfg.get('subject_embed_dim', 16),
+        subject_embed_dropout=m_cfg.get('subject_embed_dropout', 0.0)
     )
 
 
@@ -156,15 +157,36 @@ def build_optimizer_and_scheduler(model: nn.Module, cfg: Dict[str, Any]) -> Tupl
     """Создает оптимизатор и планировщик скорости обучения."""
     opt_cfg = cfg['optimizer']
     train_cfg = cfg['training']
+    # Опционально: отдельный weight_decay для subject embeddings
+    params_subject = []
+    params_other = []
+    if hasattr(model, 'use_subject_embed') and model.use_subject_embed:
+        for name, p in model.named_parameters():
+            if not p.requires_grad: continue
+            if name.startswith('subject_embed.'):
+                params_subject.append(p)
+            else:
+                params_other.append(p)
+    else:
+        for p in model.parameters():
+            if p.requires_grad:
+                params_other.append(p)
+
+    subject_wd = opt_cfg.get('subject_embed_weight_decay', train_cfg['weight_decay'])
+    param_groups = []
+    if params_other:
+        param_groups.append({'params': params_other, 'weight_decay': train_cfg['weight_decay']})
+    if params_subject:
+        param_groups.append({'params': params_subject, 'weight_decay': subject_wd})
+
     if opt_cfg['name'] == 'adamw':
         optimizer = torch.optim.AdamW(
-            model.parameters(), lr=train_cfg['learning_rate'],
-            weight_decay=train_cfg['weight_decay'], betas=tuple(opt_cfg['betas'])
+            param_groups, lr=train_cfg['learning_rate'],
+            betas=tuple(opt_cfg['betas'])
         )
     else:
         optimizer = torch.optim.Adam(
-            model.parameters(), lr=train_cfg['learning_rate'],
-            weight_decay=train_cfg['weight_decay']
+            param_groups, lr=train_cfg['learning_rate']
         )
     
     sched_cfg = cfg['scheduler']
