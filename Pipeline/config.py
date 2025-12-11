@@ -70,8 +70,8 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
             'gating': False,  # A4/A5: по умолчанию выкл., т.к. не улучшает f1_macro
             'cov_type': 'corr',
             'use_subject_embed': True,     # Phase 4B-6: Subject embeddings ENABLED
-            'subject_embed_dim': 16,       # Embedding dimension
-            'subject_embed_dropout': 0.0,  # A6: dropout на subject embedding (0.0; варианты: 0.1, 0.2)
+            'subject_embed_dim': 16,       # Embedding dimension (A6 best on DS1)
+            'subject_embed_dropout': 0.2,  # A6 best: dropout 0.2
         },
         'training': {
             'n_epochs': 50,
@@ -89,8 +89,8 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
         'cv': {'n_splits': 5, 'random_state': RANDOM_SEED},
         'optimizer': {
             'name': 'adamw', 'betas': [0.9, 0.999],
-            # A6: отдельный weight_decay для subject embeddings (по умолчанию совпадает)
-            'subject_embed_weight_decay': 1e-4,
+            # A6 best: отдельный weight_decay для subject embeddings
+            'subject_embed_weight_decay': 5e-4,
         },
         # Дефолт: настройки из A2 (лучшие на DS1)
         'scheduler': {'name': 'cosine', 'T_max': 20, 'warmup_epochs': 3},
