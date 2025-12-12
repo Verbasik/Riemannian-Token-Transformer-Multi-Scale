@@ -65,8 +65,12 @@ def window_signal(x: torch.Tensor, window: int, stride: int) -> torch.Tensor:
     return torch.stack(xs, dim=1)
 
 
-def cov_shrinkage_oas(x: torch.Tensor, eps: float = EPSILON) -> torch.Tensor:
-    """Оценка ковариационной матрицы с использованием Oracle Approximating Shrinkage (OAS)."""
+def cov_shrinkage_oas(x: torch.Tensor, eps: float = EPSILON, min_alpha: float = 0.1) -> torch.Tensor:
+    """Оценка ковариации с Oracle Approximating Shrinkage (OAS).
+
+    Параметры:
+      - min_alpha: нижняя граница зажима коэффициента усадки (по умолчанию 0.1; для B2 допускаем 0.01).
+    """
     B, C, T = x.shape
     x = x - x.mean(dim=-1, keepdim=True)
     cov = (x @ x.transpose(-1, -2)) / (T - 1)
@@ -77,9 +81,41 @@ def cov_shrinkage_oas(x: torch.Tensor, eps: float = EPSILON) -> torch.Tensor:
     mu = trace_cov / C
     num = trace_cov2 + mu ** 2
     den = (T - 1) * (trace_cov2 - (trace_cov ** 2) / C) + 1e-6
-    alpha = (num / den).clamp(0.1, 1.0).unsqueeze(-1).unsqueeze(-1)
+    alpha = (num / den).clamp(min_alpha, 1.0).unsqueeze(-1).unsqueeze(-1)
     shrunk = (1 - alpha) * cov + alpha * mu.view(B, 1, 1) * eye
     return _spd_eig_clamp_robust(shrunk, eps=eps)
+
+
+def cov_shrinkage_ledoit_wolf(x: torch.Tensor, eps: float = EPSILON) -> torch.Tensor:
+    """Оценка ковариации методом Ledoit–Wolf (закрытая форма).
+
+    Формулы:
+      S = (1/T) X X^T, mu = tr(S)/C, T — длина окна, C — число каналов.
+      phi_hat = (1/T) * sum_ij ( E[x_i^2 x_j^2] - S_ij^2 ), где E[·]≈(1/T)∑ x_ti^2 x_tj^2
+      gamma_hat = ||S - mu I||_F^2
+      alpha = clip(phi_hat/gamma_hat, 0, 1)
+      Σ = (1 - alpha) S + alpha * mu I
+    """
+    B, C, T = x.shape
+    x = x - x.mean(dim=-1, keepdim=True)
+    eye = torch.eye(C, device=x.device, dtype=x.dtype).unsqueeze(0)
+    # sample covariance (1/T)
+    S = (x @ x.transpose(-1, -2)) / T
+    S = 0.5 * (S + S.transpose(-1, -2))
+    mu = S.diagonal(dim1=-2, dim2=-1).sum(dim=-1) / C  # [B]
+    # E[x_i^2 x_j^2]
+    X2 = x.pow(2)
+    E_mat = (X2 @ X2.transpose(-1, -2)) / T  # [B,C,C]
+    S_sq = S.pow(2)
+    phi_mat = E_mat - S_sq
+    phi_hat = (phi_mat.sum(dim=(-1, -2)) / T).clamp(min=0.0)  # [B]
+    # gamma_hat = ||S - mu I||_F^2
+    S_muI = S - mu.view(B, 1, 1) * eye
+    gamma_hat = S_muI.pow(2).sum(dim=(-1, -2)).clamp(min=1e-12)
+    alpha = (phi_hat / gamma_hat).clamp(0.0, 1.0).view(B, 1, 1)
+    Sigma = (1 - alpha) * S + alpha * mu.view(B, 1, 1) * eye
+    Sigma = Sigma + eps * eye
+    return _spd_eig_clamp_robust(Sigma, eps=eps)
 
 
 def spd_logm(A: torch.Tensor, eps: float = EPSILON) -> torch.Tensor:

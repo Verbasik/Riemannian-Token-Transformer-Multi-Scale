@@ -135,6 +135,8 @@ def build_model(cfg: Dict[str, Any], n_channels: int, n_subjects: int) -> nn.Mod
         n_layers=m_cfg['n_layers'], dropout=m_cfg['dropout'], eps=m_cfg['eps'],
         attn_heads=m_cfg.get('attn_heads', 1), gating=m_cfg.get('gating', False),
         cov_type=m_cfg.get('cov_type', 'corr'),
+        cov_estimator=m_cfg.get('cov_estimator', 'oas'),
+        oas_min_alpha=m_cfg.get('oas_min_alpha', 0.1),
         # A8: SPD аугментация (по умолчанию выкл.)
         use_spd_augment=m_cfg.get('use_spd_augment', False),
         spd_jitter_std=m_cfg.get('spd_jitter_std', 0.05),

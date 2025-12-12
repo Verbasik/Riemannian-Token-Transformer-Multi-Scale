@@ -13,6 +13,7 @@ import torch
 import torch.nn as nn
 
 from riemannian_utils import (TangentSpaceJittering, cov_shrinkage_oas,
+                              cov_shrinkage_ledoit_wolf,
                               spd_correlation_from_cov, spd_logm,
                               spd_vectorize, window_signal)
 
@@ -40,7 +41,9 @@ class RTTMultiScale(nn.Module):
         window_size_small: int, stride_small: int, window_size_large: int,
         stride_large: int, d_model: int, n_heads: int, ff_dim: int,
         n_layers: int, dropout: float, eps: float, attn_heads: int,
-        gating: bool, cov_type: str, use_spd_augment: bool = False,
+        gating: bool, cov_type: str,
+        cov_estimator: str = 'oas', oas_min_alpha: float = 0.1,
+        use_spd_augment: bool = False,
         spd_jitter_std: float = 0.05, spd_jitter_prob: float = 0.5,
         use_subject_embed: bool = False, n_subjects: int = 5, subject_embed_dim: int = 16,
         subject_embed_dropout: float = 0.0,
@@ -49,6 +52,8 @@ class RTTMultiScale(nn.Module):
         self.ws_s, self.st_s = window_size_small, stride_small
         self.ws_l, self.st_l = window_size_large, stride_large
         self.eps, self.gating, self.cov_type = eps, gating, cov_type
+        self.cov_estimator = cov_estimator
+        self.oas_min_alpha = oas_min_alpha
         self.use_spd_augment = use_spd_augment
         self.use_subject_embed = use_subject_embed
 
@@ -105,7 +110,10 @@ class RTTMultiScale(nn.Module):
         x_win = window_signal(x_pc, w, s)
         B, L, c, _ = x_win.shape
         x_flat = x_win.reshape(B * L, c, -1)
-        cov = cov_shrinkage_oas(x_flat, eps=self.eps)
+        if self.cov_estimator == 'lw':
+            cov = cov_shrinkage_ledoit_wolf(x_flat, eps=self.eps)
+        else:
+            cov = cov_shrinkage_oas(x_flat, eps=self.eps, min_alpha=self.oas_min_alpha)
         if self.cov_type == 'corr':
             cov = spd_correlation_from_cov(cov, eps=self.eps)
         else:

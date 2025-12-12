@@ -10,10 +10,21 @@
 - [✓] A8 — SPD-аугментация: проведён свип (std∈{0.02,0.03} × prob∈{0.2,0.3}); лучший сетап `std=0.03`, `prob=0.2` (Fold 1: f1_macro=0.2761, acc=0.2978, loss=1.3897).
 - [ ] V2 План: B0 — 5-fold DS1 для текущего лучшего набора (A6@A2/A3)
 - [ ] V2 План: B1 — Потери (LA‑CE/BSCE/LDAM‑DRW) vs CB‑Focal
+  - [✓] Реализован скрипт `experiments/run_b1_losses.py` с LA‑CE, BSCE, LDAM‑DRW и 5‑fold запуском; baseline не изменён.
+  - [✓] Результаты (DS1, 5-fold): CB-Focal — лидер (f1_macro=0.2732); LA‑CE/BSCE≈0.2602; LDAM s16≈0.2618, s32≈0.2591. Решение: оставить CB‑Focal базой.
 - [ ] V2 План: B2 — SPD ковариации (OAS minα=0.01, Ledoit‑Wolf)
+  - [✓] Добавлен `cov_estimator ∈ {oas,lw}` и `oas_min_alpha` (дефолт 0.1) в модель/конфиг.
+  - [✓] Реализован Ledoit–Wolf в `riemannian_utils.py` и прокинут в модель.
+  - [✓] Подготовлен скрипт `experiments/run_b2_cov.py` (5-fold DS1: oas_base vs oas_min0p01 vs lw).
+  - [→] Результаты Fold 1: OAS base f1=0.2915; OAS min0.01 f1=0.2853; LW f1=0.2930. План: запустить 5-fold DS1.
 - [ ] V2 План: B3 — DropToken p∈{0.1,0.2}
 - [ ] V2 План: B4 — SPD‑jitter с аннейлингом/Off‑diag
 - [ ] V2 План: B5 — EMA α∈{0.99,0.995}
+\n+## Архитектурные сдвиги (C‑серия)
+- [✓] Документированы C1–C3 в `experiments/architectural_shifts.md` (SPDNet вставка, GCN по электродам, GRL+CORAL).
+- [ ] Реализация C1 (SPDNet‑вставка) — прототип в модели, свип dims.
+- [ ] Реализация C3 (GRL+CORAL) — прототип, свип λ.
+- [ ] Реализация C2 (GCN) — интеграция перед `channel_proj`.
 - [ ] Подбор гиперпараметров и абляции (subject embeddings, gating, окна/шаги, d_model, cov_type).
 - [ ] Расширение на несколько субъектов и анализ переносимости.
 - [ ] Улучшение документации и логгинга экспериментов.

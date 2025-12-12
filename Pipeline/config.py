@@ -69,6 +69,9 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
             'attn_heads': 1,  # A2/A5: лучший результат на DS1 при 1 голове
             'gating': False,  # A4/A5: по умолчанию выкл., т.к. не улучшает f1_macro
             'cov_type': 'corr',
+            # SPD covariance estimator (B2): 'oas' (default) or 'lw'
+            'cov_estimator': 'oas',
+            'oas_min_alpha': 0.1,  # B2: ослабление clamp до 0.01 тестируется в экспериментах
             # A8: SPD-аугментация отключена по умолчанию (кандидат как опция)
             'use_spd_augment': False,
             'spd_jitter_std': 0.03,
