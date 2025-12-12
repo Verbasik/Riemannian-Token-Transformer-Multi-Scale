@@ -46,6 +46,17 @@
   - f1_macro: 0.2737, accuracy: 0.2874, balanced_accuracy: 0.2929, loss: 1.4607
   - Чекпойнт/метрики: `Train/checkpoints/phase4b_5subjects_CPU/best_model.pt`, `Train/results/phase4b_5subjects_CPU/metrics.json`
 
+## Лучший Набор (DS1, Fold 1)
+  - Профиль: A6 на базе A2/A3 (subject embeddings с регуляцией).
+  - Метрики: f1_macro=0.2915, accuracy=0.3090, balanced_accuracy=0.3055, precision_macro=0.3066,
+  recall_macro=0.3055, loss=1.4058.
+  - Loss: CB-Focal (gamma=1.75, beta=0.999).
+  - Scheduler: Cosine (T_max=20, warmup_epochs=3).
+  - Model: gating=false, attn_heads=1, use_subject_embed=true, subject_embed_dim=16, subject_embed_dropout=0.2.
+  - Optimizer: AdamW, weight_decay=1e-4, subject_embed_weight_decay=5e-4.
+  - Data: normalize=zscore_hybrid, exclude_channels=[124], stride_small=96 (окна: 128/96 и 256/128).
+  - Train: n_epochs=50, batch_size=16 (cuda)/8 (cpu), WeightedRandomSampler=false.
+
 ## Советы по исследованию
 - Развернуть 5-fold оценку и усреднить метрики.
 - Абляции: `use_subject_embed` on/off, `cov_type`=`corr|trace`, `gating` on/off, окна/шаги, `proj_channels`, `d_model`, `n_layers`.

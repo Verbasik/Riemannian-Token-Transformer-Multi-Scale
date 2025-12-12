@@ -3,6 +3,8 @@
 ## Текущий фокус
 - Инициализация Банка Памяти и фиксация текущего состояния пайплайна Phase 4B.
 - Бейзлайн: обучение `sub-04` (Fold 1), гибридная нормализация, subject embeddings включены.
+- Эксперимент A8 — SPD-аугментация: подготовлен скрипт свипа (`std ∈ {0.02, 0.03}`, `prob ∈ {0.2, 0.3}`) с лучшими базовыми настройками.
+- Сформирован V2 план абляций (серии B0–B5) в `experiments/ablation_plan_V2.md`.
 
 ## Последние результаты
 - `python3 Pipeline/train.py` — ✅ восстановлена лучшая модель, метрики валидации (Fold 1):
@@ -13,6 +15,10 @@
   - balanced_accuracy: 0.2929
   - loss: 1.4607
   Артефакты: `Train/checkpoints/phase4b_5subjects_CPU/best_model.pt`, `Train/results/phase4b_5subjects_CPU/metrics.json`.
+
+- A8 (SPD-аугментация, свип std×prob) — ✅ результаты (DS1, Fold 1):
+  - Лучшее: `std=0.03`, `prob=0.2` → f1_macro=0.2761, accuracy=0.2978, loss=1.3897.
+  - Тренды: меньшая вероятность (0.2) стабильнее 0.3 по f1; при 0.2 умеренный шум (0.03) лучше небольшого (0.02).
 
 ## Предлагаемые следующие шаги
 - Развернуть оценку на все 5 фолдов (для `sub-04`) и усреднить метрики.
@@ -42,3 +48,25 @@
 4) Рассмотреть domain alignment (например, CORAL-потеря на ковариациях) или DANN как POC.
 5) Режим батч-семплинга с смешением субъектов в каждом батче для обучения инвариантностей.
 6) Проверить согласованность каналов/монтажа между субъектами и корректность `exclude_channels`.
+
+## Обновление 2025-12-11 — Результаты абляций A1–A7 (DS1: sub-04)
+- A1 (WeightedRandomSampler): ухудшение F1 (0.2266) при CB-Focal → отключён по умолчанию; избегать двойной балансировки.
+- A2 (CB-Focal, gamma/beta): лучшая комбинация `gamma=1.75`, `beta=0.999` (Fold1 f1=0.2908; 5-fold mean f1=0.2686). Зафиксировано в конфиге.
+- A3 (Cosine LR): на DS1 лучший режим соответствует A2 (`T_max=20`, `warmup=3`); длинные периоды/большой warmup хуже. Зафиксировано в конфиге.
+- A4/A5 (Gating/attn_heads): gating не улучшает f1_macro; `attn_heads=1` лучший при отключённом gating. Комбинации с heads=2 дают +0.32% к A4, но ниже A2.
+- A5' (Multi-head only): heads=1 > heads=2/4 по f1; оставить `attn_heads=1` по умолчанию.
+- A6 (Subject embeddings регуляция): лучший кандидат — `subject_embed_dim=16`, `dropout=0.2`, `embed_wd=5e-4` (f1≈0.2915). Зафиксировано как дефолт (до 5-fold подтверждения).
+- A7 (stride_small): уменьшение шага до 80/64 ухудшает f1; оставить `stride_small=96`.
+
+Итоговая лучшая конфигурация (DS1 Fold1):
+- Loss: CB-Focal (`gamma=1.75`, `beta=0.999`).
+- Scheduler: Cosine (`T_max=20`, `warmup=3`).
+- Model: `gating=False`, `attn_heads=1`, subject embeddings `dim=16`, `dropout=0.2`.
+- Optimizer: отдельный `subject_embed_weight_decay=5e-4`.
+- Data: `normalize=zscore_hybrid`, `exclude_channels=[124]`. `stride_small=96`.
+
+Следующие шаги:
+- 5-fold валидация лучшей конфигурации на DS1 и DS2 (без undersampling).
+- Подтвердить A8 (std=0.03, prob=0.2) на 5-fold DS1; затем проверить на DS2.
+- Запустить серии B0–B5 согласно `ablation_plan_V2.md` (приоритет: B0→B1→B2→B3→B4→B5).
+ - A9 (EMA) как кандидат для дальнейшего прироста.

@@ -69,6 +69,10 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
             'attn_heads': 1,  # A2/A5: лучший результат на DS1 при 1 голове
             'gating': False,  # A4/A5: по умолчанию выкл., т.к. не улучшает f1_macro
             'cov_type': 'corr',
+            # A8: SPD-аугментация отключена по умолчанию (кандидат как опция)
+            'use_spd_augment': False,
+            'spd_jitter_std': 0.03,
+            'spd_jitter_prob': 0.2,
             'use_subject_embed': True,     # Phase 4B-6: Subject embeddings ENABLED
             'subject_embed_dim': 16,       # Embedding dimension (A6 best on DS1)
             'subject_embed_dropout': 0.2,  # A6 best: dropout 0.2

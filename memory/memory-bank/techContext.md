@@ -19,6 +19,23 @@
 - Для межсубъектной оценки: `StratifiedGroupKFold` (группа = subject) или LOSO (Leave-One-Subject-Out) из scikit-learn.
 - Для балансировки без потери данных: `WeightedRandomSampler` в PyTorch вместо агрессивного undersampling.
 
+## Экспериментальные скрипты (experiments/)
+- `run_a2_sweep.py` — поиск `gamma/beta` для CB-Focal
+- `run_cv.py` — k-fold запуск с агрегацией метрик (поддержка `cv.fold_index`)
+- `run_a3_eval.py`, `run_a3_sweep.py` — расписание LR (Cosine, T_max×warmup)
+- `run_a4_eval.py` — gating=True
+- `run_a5_eval.py`, `run_heads_sweep.py` — multi-head pooling, с/без gating
+- `run_a6_sweep.py` — subject embeddings: dim×dropout×L2
+- `run_a7_sweep.py` — stride_small свип
+- `run_a8_sweep.py` — SPD-аугментация: свип std×prob для tangent jitter
+
+## Конфигурация (актуальные дефолты)
+- Loss: CB-Focal (`gamma=1.75`, `beta=0.999`)
+- Scheduler: Cosine (`T_max=20`, `warmup_epochs=3`)
+- Model: `gating=False`, `attn_heads=1`, `subject_embed_dim=16`, `subject_embed_dropout=0.2`, `stride_small=96`
+- Optimizer: AdamW, `subject_embed_weight_decay=5e-4`
+- A8 (по умолчанию): `use_spd_augment=False` (включается в экспериментах), `spd_jitter_std`, `spd_jitter_prob` настраиваются в скрипте
+
 ## Конфигурация (`Pipeline/config.py`)
 - Ключевые поля:
   - `data`: `data_dir`, `subject_ids`, `task`, `normalize`, `exclude_channels`
