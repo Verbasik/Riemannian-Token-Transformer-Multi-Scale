@@ -1,0 +1,102 @@
+{
+  "data": {
+    "data_dir": "/home/edward/Projects/EEG_to_Text/derivatives/preprocessed_pkl",
+    "subject_ids": [
+      "sub-01"
+    ],
+    "task": "imagine",
+    "normalize": "zscore_hybrid",
+    "exclude_channels": [
+      124
+    ]
+  },
+  "model": {
+    "n_channels": 125,
+    "n_classes": 8,
+    "proj_channels": 24,
+    "window_size_small": 128,
+    "stride_small": 96,
+    "window_size_large": 256,
+    "stride_large": 128,
+    "d_model": 128,
+    "n_heads": 4,
+    "ff_dim": 256,
+    "n_layers": 2,
+    "dropout": 0.1,
+    "eps": 0.0001,
+    "attn_heads": 1,
+    "gating": false,
+    "cov_type": "corr",
+    "cov_estimator": "oas",
+    "oas_min_alpha": 0.1,
+    "use_spd_augment": false,
+    "spd_jitter_std": 0.03,
+    "spd_jitter_prob": 0.2,
+    "use_spdnet": false,
+    "spdnet_dims": [
+      16
+    ],
+    "spdnet_alpha": 0.05,
+    "use_tangent_ortho": false,
+    "tangent_ortho_dim": 128,
+    "use_gcn": true,
+    "gcn_k": 8,
+    "gcn_alpha": 0.3,
+    "gcn_nonlinearity": "tanh",
+    "gcn_sigma": 0.05,
+    "gcn_K": 2,
+    "gcn_layers": 1,
+    "gcn_norm": "batch",
+    "use_c3": false,
+    "c3": {
+      "da_lambda": 0.1,
+      "coral_lambda": 0.01,
+      "domain_hidden": 64
+    },
+    "use_subject_embed": true,
+    "subject_embed_dim": 16,
+    "subject_embed_dropout": 0.2
+  },
+  "training": {
+    "n_epochs": 50,
+    "batch_size": 16,
+    "learning_rate": 0.0003,
+    "weight_decay": 0.0001,
+    "early_stopping_patience": 8,
+    "use_amp": true,
+    "grad_clip": 1.0,
+    "num_workers": 4,
+    "pin_memory": true,
+    "use_weighted_sampler": false,
+    "allow_sampler_with_cb_focal": false
+  },
+  "cv": {
+    "n_splits": 5,
+    "random_state": 42
+  },
+  "optimizer": {
+    "name": "adamw",
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "subject_embed_weight_decay": 0.0005
+  },
+  "scheduler": {
+    "name": "cosine",
+    "T_max": 20,
+    "warmup_epochs": 3
+  },
+  "loss": {
+    "type": "cb_focal",
+    "beta": 0.999,
+    "gamma": 1.75
+  },
+  "logging": {
+    "save_attn": false
+  },
+  "seed": 42,
+  "device": "cuda",
+  "checkpoint_dir": "Train/checkpoints/phase4b_5subjects_CUDA",
+  "results_dir": "Train/results/phase4b_5subjects_CUDA"
+}

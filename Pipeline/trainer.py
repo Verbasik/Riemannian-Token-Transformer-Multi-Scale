@@ -23,6 +23,21 @@ from torch.utils.data import DataLoader
 
 from utils import print_metrics
 
+
+def _to_serializable(obj: Any):
+    """Рекурсивно конвертирует объект в JSON-совместимый формат."""
+    if isinstance(obj, Path):
+        return str(obj)
+    if isinstance(obj, torch.device):
+        return str(obj)
+    if isinstance(obj, (np.floating, np.integer)):
+        return obj.item()
+    if isinstance(obj, dict):
+        return {k: _to_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_serializable(v) for v in obj]
+    return obj
+
 # =============================================================================
 # Функции потерь и метрики
 # =============================================================================
@@ -282,13 +297,13 @@ def save_artifacts(
         np.savez(res_dir / 'attn_stats.npz', **attn_stats)
 
     with open(res_dir / 'metrics.json', 'w', encoding='utf-8') as f:
-        json.dump(metrics, f, indent=2, ensure_ascii=False)
+        json.dump(_to_serializable(metrics), f, indent=2, ensure_ascii=False)
 
     with open(res_dir / 'history.json', 'w', encoding='utf-8') as f:
-        json.dump(history, f, indent=2, ensure_ascii=False)
+        json.dump(_to_serializable(history), f, indent=2, ensure_ascii=False)
 
     # Dump full config for воспроизводимости
     with open(res_dir / 'config_run.json', 'w', encoding='utf-8') as f:
-        json.dump(cfg, f, indent=2, ensure_ascii=False)
+        json.dump(_to_serializable(cfg), f, indent=2, ensure_ascii=False)
 
     print(f"Артефакты сохранены в {ckpt_dir} и {res_dir}")
