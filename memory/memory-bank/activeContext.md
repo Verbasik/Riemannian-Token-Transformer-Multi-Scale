@@ -73,6 +73,12 @@
 
 ### Небольшие правки (2026-02-05)
 - Исправлен дамп `config_run.json`/`history.json`/`metrics.json`: сериализация Path/torch.device/np.* через `_to_serializable` в `save_artifacts`, чтобы избежать `TypeError: PosixPath is not JSON serializable`.
+- Проверена целостность сохранённых артефактов (`Train/results/phase4b_5subjects_CUDA`): `metrics.json` с per_class, `history.json` с train/val loss, val F1, LR, grad_norm min/mean/max (23 эпох из‑за ранней остановки), `val_preds.npz` (y_true/y_pred/proba/subject_id/sample_id без NaN), `config_run.json` корректно сериализован. `attn_stats.npz` отсутствует, т.к. запуск был без `--save-attn`.
+
+### Новые утилиты постобработки (2026-02-05)
+- Добавлена папка `analysis_tools/` со скриптами для отчётности: распределение классов/субъектов, эффект нормализации, SPD‑спектры, кривые обучения, confusion/PR/ROC, анализ ошибок, агрегатор абляций, межсубъектные метрики/UMAP, чувствительность SPD‑аугментации, статистики attention, важность каналов (variance/веса + проекция на монтаж), гистограммы градиентных норм, сравнение классических ML, генерация схемы пайплайна и LaTeX таблицы конфига.
+- Все скрипты опираются на `analysis_tools/common.py`, сохраняют вывод в `Train/analysis/**` или `exp_dir/analysis/**` и поддерживают запуск `python -m analysis_tools.<script>`.
+- Прогон на эксперименте `Train/results/phase4b_5subjects_CUDA`: успешно сгенерированы отчёты по классам/субъектам, кривые обучения, confusion/PR/ROC, ошибки, абляции (делта к базе), метрики по субъектам, гистограмма grad_norm, чувствительность SPD‑аугментации, схема пайплайна, сравнение экспериментов. Не запущены из‑за отсутствия входов: `normalization_effect` (нет сырых train/val и norm_stats), `spd_spectra` (нет ковариаций/лог‑спектров), `attention_stats` (нет attn_stats.npz), `channel_importance` (нет checkpoint/данных).
 
 ## Предлагаемые следующие шаги
 - Развернуть оценку на все 5 фолдов (для `sub-04`) и усреднить метрики.
