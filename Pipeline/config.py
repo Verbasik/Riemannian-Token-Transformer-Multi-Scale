@@ -47,7 +47,8 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
     return {
         'data': {
             'data_dir': PREPROCESSED_DIR,
-            'subject_ids': ['sub-01'],  # 'sub-03', 'sub-04', 'sub-05'
+            # Базовый сценарий Phase 4B: одиночный субъект sub-04 (Fold 1)
+            'subject_ids': ['sub-04'],
             'task': 'imagine',
             'normalize': 'zscore_hybrid',  # Phase 4B-6: Hybrid normalization (subject centering + global scaling)
             'exclude_channels': [124],
@@ -67,38 +68,8 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
             'dropout': 0.1,
             'eps': EPSILON,
             'attn_heads': 1,  # A2/A5: лучший результат на DS1 при 1 голове
-            'gating': False,  # A4/A5: по умолчанию выкл., т.к. не улучшает f1_macro
             'cov_type': 'corr',
-            # SPD covariance estimator (B2): 'oas' (default) or 'lw'
-            'cov_estimator': 'oas',
-            'oas_min_alpha': 0.1,  # B2: ослабление clamp до 0.01 тестируется в экспериментах
-            # A8: SPD-аугментация отключена по умолчанию (кандидат как опция)
-            'use_spd_augment': False,
-            'spd_jitter_std': 0.03,
-            'spd_jitter_prob': 0.2,
-            # C1: SPDNet-вставка (по умолчанию отключена)
-            'use_spdnet': False,
-            'spdnet_dims': [16],
-            'spdnet_alpha': 0.05,
-            # C1b: Orthonormal projection in tangent space (по умолчанию отключена)
-            'use_tangent_ortho': False,
-            'tangent_ortho_dim': 128,
-            # C2: Graph convolution over electrodes (включено с лучшими настройками для свипа)
-            'use_gcn': True,
-            'gcn_k': 8,
-            'gcn_alpha': 0.3,
-            'gcn_nonlinearity': 'tanh',  # 'tanh'|'relu'|'none'
-            'gcn_sigma': 0.05,
-            'gcn_K': 2,
-            'gcn_layers': 1,
-            'gcn_norm': 'batch',
-            # C3: Domain-adversarial + CORAL (по умолчанию отключено)
-            'use_c3': False,
-            'c3': {
-                'da_lambda': 0.1,
-                'coral_lambda': 0.01,
-                'domain_hidden': 64
-            },
+            'oas_min_alpha': 0.1,  # B2 база: clamp 0.1
             'use_subject_embed': True,     # Phase 4B-6: Subject embeddings ENABLED
             'subject_embed_dim': 16,       # Embedding dimension (A6 best on DS1)
             'subject_embed_dropout': 0.2,  # A6 best: dropout 0.2
@@ -113,8 +84,6 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
             'grad_clip': 1.0,
             'num_workers': 4 if device == 'cuda' else 0,
             'pin_memory': device == 'cuda',
-            'use_weighted_sampler': False,           # A1: по умолчанию отключен (см. A2)
-            'allow_sampler_with_cb_focal': False,    # запрет сочетания sampler + CB-Focal
         },
         'cv': {'n_splits': 5, 'random_state': RANDOM_SEED},
         'optimizer': {

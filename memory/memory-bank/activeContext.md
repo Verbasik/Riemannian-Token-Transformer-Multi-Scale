@@ -80,6 +80,9 @@
 - Все скрипты опираются на `analysis_tools/common.py`, сохраняют вывод в `Train/analysis/**` или `exp_dir/analysis/**` и поддерживают запуск `python -m analysis_tools.<script>`.
 - Прогон на эксперименте `Train/results/phase4b_5subjects_CUDA`: успешно сгенерированы отчёты по классам/субъектам, кривые обучения, confusion/PR/ROC, ошибки, абляции (делта к базе), метрики по субъектам, гистограмма grad_norm, чувствительность SPD‑аугментации, схема пайплайна, сравнение экспериментов. Не запущены из‑за отсутствия входов: `normalization_effect` (нет сырых train/val и norm_stats), `spd_spectra` (нет ковариаций/лог‑спектров), `attention_stats` (нет attn_stats.npz), `channel_importance` (нет checkpoint/данных).
 
+### Чистка конфига (2026-02-05)
+ - В `Pipeline/config.py` убраны неиспользуемые экспериментальные флаги (SPDNet, tangent_ortho, GCN/C3, SPD-augment, gating, sampler/CB-Focal сочетания, cov_estimator) и зафиксирован базовый сценарий: `subject_ids=['sub-04']`, `use_gcn=False`. Дефолтные параметры теперь отражают подтверждённый бейзлайн A2/A3/A6 без «мертвых» опций.
+
 ## Предлагаемые следующие шаги
 - Развернуть оценку на все 5 фолдов (для `sub-04`) и усреднить метрики.
 - Провести абляции: отключить `use_subject_embed`, попробовать `cov_type='trace'`, включить `gating`, варьировать `proj_channels/d_model/n_layers`.
