@@ -9,6 +9,7 @@
 - [→] Пересмотр стратегии балансировки: отказ от агрессивного undersampling, исследование WeightedRandomSampler.
 - [✓] A8 — SPD-аугментация: проведён свип (std∈{0.02,0.03} × prob∈{0.2,0.3}); лучший сетап `std=0.03`, `prob=0.2` (Fold 1: f1_macro=0.2761, acc=0.2978, loss=1.3897).
 - [✓] Подготовлен и прогнан пакет постобработки `analysis_tools/` на эксперименте `phase4b_5subjects_CUDA`; часть скриптов требует дополнительных входов (norm_stats/raw, covs, attn_stats, checkpoint) и была пропущена.
+- [✓] Дефолтный субъект для запуска в `Pipeline/config.py` переключён на `sub-01` (для нового базового прогона).
 - [ ] V2 План: B0 — 5-fold DS1 для текущего лучшего набора (A6@A2/A3)
 - [ ] V2 План: B1 — Потери (LA‑CE/BSCE/LDAM‑DRW) vs CB‑Focal
   - [✓] Реализован скрипт `experiments/run_b1_losses.py` с LA‑CE, BSCE, LDAM‑DRW и 5‑fold запуском; baseline не изменён.
