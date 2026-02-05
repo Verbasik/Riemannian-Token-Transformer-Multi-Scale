@@ -33,23 +33,33 @@ def _eigh_cpu_fallback(A: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     return torch.linalg.eigh(A)
 
 
-def _spd_eig_clamp_robust(A: torch.Tensor, eps: float, max_tries: int = 5) -> torch.Tensor:
-    """Надежное обеспечение SPD через ограничение собственных значений."""
+def _spd_eig_clamp_robust(A: torch.Tensor, eps: float, max_tries: int = 6) -> torch.Tensor:
+    """Надежное обеспечение SPD через ограничение собственных значений с эскалацией джиттера и float64-фолбэком."""
+    # Санитизация и симметризация
+    A = torch.nan_to_num(A, nan=0.0, posinf=1e6, neginf=-1e6)
     A = 0.5 * (A + A.transpose(-1, -2))
-    eye = torch.eye(A.size(-1), device=A.device, dtype=A.dtype)
-    if A.dim() == 3: eye = eye.unsqueeze(0)
-    jitter = 10.0 * eps
+    n = A.size(-1)
+    eye = torch.eye(n, device=A.device, dtype=A.dtype)
+    if A.dim() == 3:
+        eye = eye.unsqueeze(0)
+    # Стартовый джиттер как число (не Tensor), чтобы избежать ошибок типов
+    jitter = max(10.0 * eps, 1e-9)
     B = A + jitter * eye
-    for _ in range(max_tries):
+    for i in range(max_tries):
         try:
-            w, V = _eigh_cpu_fallback(B)
-            w = torch.clamp(w, min=eps)
+            # Попробовать float64 на CPU для устойчивости
+            B64 = B.detach().to('cpu', dtype=torch.float64)
+            w64, V64 = torch.linalg.eigh(B64)
+            w64 = torch.clamp(w64, min=float(eps))
+            V = V64.to(device=A.device, dtype=A.dtype)
+            w = w64.to(device=A.device, dtype=A.dtype)
             return (V * w.unsqueeze(-2)) @ V.transpose(-1, -2)
         except Exception:
-            jitter *= 100.0
-            B = A + jitter * eye
+            # Эскалация джиттера
+            scale = (10.0 ** (i + 1)) * eps
+            B = A + scale * eye
     print("⚠️  ПРЕДУПРЕЖДЕНИЕ: _spd_eig_clamp_robust не сошелся. Используется диагональ.")
-    diag = torch.diagonal(A, dim1=-2, dim2=-1).clamp(min=eps)
+    diag = torch.diagonal(A, dim1=-2, dim2=-1).abs().clamp(min=eps)
     return torch.diag_embed(diag)
 
 # =============================================================================

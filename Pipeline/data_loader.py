@@ -121,7 +121,11 @@ class ChiscoDataset(Dataset):
             if 'mean_per_subject' not in self.norm_stats or 'std_global' not in self.norm_stats:
                 raise ValueError("norm_stats должны содержать 'mean_per_subject' и 'std_global'.")
 
-            mean_c = self.norm_stats['mean_per_subject'][subject_id]
+            # Если subject отсутствует в train (LOSO/novel), используем нулевое центрирование
+            if subject_id in self.norm_stats['mean_per_subject']:
+                mean_c = self.norm_stats['mean_per_subject'][subject_id]
+            else:
+                mean_c = np.zeros(eeg.shape[0], dtype=np.float32)
             std_global = self.norm_stats['std_global']
 
             mean_c = mean_c.reshape(-1, 1)

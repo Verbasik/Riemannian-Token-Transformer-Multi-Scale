@@ -76,6 +76,29 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
             'use_spd_augment': False,
             'spd_jitter_std': 0.03,
             'spd_jitter_prob': 0.2,
+            # C1: SPDNet-вставка (по умолчанию отключена)
+            'use_spdnet': False,
+            'spdnet_dims': [16],
+            'spdnet_alpha': 0.05,
+            # C1b: Orthonormal projection in tangent space (по умолчанию отключена)
+            'use_tangent_ortho': False,
+            'tangent_ortho_dim': 128,
+            # C2: Graph convolution over electrodes (включено с лучшими настройками для свипа)
+            'use_gcn': True,
+            'gcn_k': 8,
+            'gcn_alpha': 0.3,
+            'gcn_nonlinearity': 'tanh',  # 'tanh'|'relu'|'none'
+            'gcn_sigma': 0.05,
+            'gcn_K': 2,
+            'gcn_layers': 1,
+            'gcn_norm': 'batch',
+            # C3: Domain-adversarial + CORAL (по умолчанию отключено)
+            'use_c3': False,
+            'c3': {
+                'da_lambda': 0.1,
+                'coral_lambda': 0.01,
+                'domain_hidden': 64
+            },
             'use_subject_embed': True,     # Phase 4B-6: Subject embeddings ENABLED
             'subject_embed_dim': 16,       # Embedding dimension (A6 best on DS1)
             'subject_embed_dropout': 0.2,  # A6 best: dropout 0.2

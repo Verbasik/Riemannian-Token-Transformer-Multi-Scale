@@ -72,10 +72,13 @@ def evaluate(model: nn.Module, loader: DataLoader, device: str, criterion: nn.Mo
 
         if use_subject_embed:
             subject_ids = batch['subject_id'].to(device)
-            logits = model(eeg, subject_ids=subject_ids)
+            out = model(eeg, subject_ids=subject_ids)
         else:
-            logits = model(eeg)
-
+            out = model(eeg)
+        if isinstance(out, tuple):
+            logits = out[0]
+        else:
+            logits = out
         total_loss += criterion(logits, labels).item()
         all_preds.append(logits.argmax(-1).cpu().numpy())
         all_labels.append(labels.cpu().numpy())
@@ -106,6 +109,16 @@ def train_loop(
 
     for epoch in range(n_epochs):
         model.train()
+        # C3: schedule adversarial/coral strengths (DANN-style)
+        p = epoch / max(1, (n_epochs - 1))
+        dann_curve = 2.0 / (1.0 + np.exp(-10.0 * p)) - 1.0
+        da_base = float(cfg.get('model', {}).get('c3', {}).get('da_lambda', 0.0))
+        coral_base = float(cfg.get('model', {}).get('c3', {}).get('coral_lambda', 0.0))
+        da_lambda_eff = da_base * float(dann_curve)
+        coral_lambda_eff = coral_base * float(min(1.0, p))
+        # Set GRL lambda if present
+        if hasattr(model, 'grl') and hasattr(model.grl, 'lambd'):
+            model.grl.lambd = da_lambda_eff
         total_loss = 0.0
         for batch in train_loader:
             eeg, labels = batch['eeg'].to(device), batch['label'].to(device)
@@ -113,10 +126,20 @@ def train_loop(
             with torch.cuda.amp.autocast(enabled=use_amp):
                 if use_subject_embed:
                     subject_ids = batch['subject_id'].to(device)
-                    logits = model(eeg, subject_ids=subject_ids)
+                    out = model(eeg, subject_ids=subject_ids)
                 else:
-                    logits = model(eeg)
+                    subject_ids = None
+                    out = model(eeg)
+                logits, feat, domain_logits = out if isinstance(out, tuple) else (out, None, None)
                 loss = criterion(logits, labels)
+                # C3: domain adversarial + CORAL
+                if domain_logits is not None and subject_ids is not None and domain_logits.shape[-1] > 1:
+                    # Skip adversarial loss if batch contains <2 unique subjects (LOSO degenerate case)
+                    if torch.unique(subject_ids).numel() > 1 and da_lambda_eff > 0.0:
+                        domain_loss = F.cross_entropy(domain_logits, subject_ids)
+                        loss = loss + da_lambda_eff * domain_loss
+                if feat is not None and subject_ids is not None and coral_lambda_eff > 0.0:
+                    loss = loss + coral_lambda_eff * _coral_loss(feat, subject_ids)
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
@@ -166,3 +189,32 @@ def save_artifacts(cfg: Dict[str, Any], metrics: Dict[str, float], model: nn.Mod
     with open(res_dir / 'metrics.json', 'w', encoding='utf-8') as f:
         json.dump(metrics, f, indent=2, ensure_ascii=False)
     print(f"Артефакты сохранены в {ckpt_dir} и {res_dir}")
+
+
+def _coral_loss(feat: torch.Tensor, subject_ids: torch.Tensor) -> torch.Tensor:
+    """Batch-wise CORAL aligning per-subject covariances to global covariance.
+
+    feat: [B, D], subject_ids: [B]
+    """
+    B, D = feat.shape
+    if B <= 1:
+        return torch.tensor(0.0, device=feat.device, dtype=feat.dtype)
+    # Global covariance
+    Xc = feat - feat.mean(dim=0, keepdim=True)
+    Cg = (Xc.t() @ Xc) / max(1, B - 1)
+    unique = torch.unique(subject_ids)
+    loss = 0.0
+    count = 0
+    for sid in unique:
+        idx = (subject_ids == sid).nonzero(as_tuple=False).squeeze(-1)
+        if idx.numel() < 2:
+            continue
+        Xi = feat.index_select(0, idx)
+        Xi = Xi - Xi.mean(dim=0, keepdim=True)
+        Ci = (Xi.t() @ Xi) / max(1, Xi.shape[0] - 1)
+        diff = Ci - Cg
+        loss = loss + (diff * diff).sum() / (D * D)
+        count += 1
+    if count == 0:
+        return torch.tensor(0.0, device=feat.device, dtype=feat.dtype)
+    return loss / count

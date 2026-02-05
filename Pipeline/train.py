@@ -50,12 +50,16 @@ def build_loaders(cfg: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, np.ndarr
         subject_mapping=subject_mapping
     )
     labels = np.array([s['label'] for s in samples])
-    splits = get_stratified_cv_splits(
-        labels, cfg['cv']['n_splits'], cfg['cv']['random_state']
-    )
-    fold_index = int(cfg.get('cv', {}).get('fold_index', 0))
-    fold_index = max(0, min(fold_index, len(splits) - 1))
-    train_idx, val_idx = splits[fold_index]
+    predefined = cfg.get('cv', {}).get('predefined_split', None)
+    if predefined is not None:
+        train_idx, val_idx = predefined
+    else:
+        splits = get_stratified_cv_splits(
+            labels, cfg['cv']['n_splits'], cfg['cv']['random_state']
+        )
+        fold_index = int(cfg.get('cv', {}).get('fold_index', 0))
+        fold_index = max(0, min(fold_index, len(splits) - 1))
+        train_idx, val_idx = splits[fold_index]
 
     # Compute normalization statistics based on mode
     if cfg['data']['normalize'] == 'zscore_hybrid':
@@ -141,10 +145,24 @@ def build_model(cfg: Dict[str, Any], n_channels: int, n_subjects: int) -> nn.Mod
         use_spd_augment=m_cfg.get('use_spd_augment', False),
         spd_jitter_std=m_cfg.get('spd_jitter_std', 0.05),
         spd_jitter_prob=m_cfg.get('spd_jitter_prob', 0.5),
+        # C1: SPDNet insertion
+        use_spdnet=m_cfg.get('use_spdnet', False),
+        spdnet_dims=m_cfg.get('spdnet_dims', None),
+        spdnet_alpha=m_cfg.get('spdnet_alpha', 0.3),
+        # C1b: Tangent space orthonormal projection
+        use_tangent_ortho=m_cfg.get('use_tangent_ortho', False),
+        tangent_ortho_dim=m_cfg.get('tangent_ortho_dim', None),
+        use_gcn=m_cfg.get('use_gcn', False),
+        gcn_k=m_cfg.get('gcn_k', 8),
+        gcn_alpha=m_cfg.get('gcn_alpha', 0.3),
+        gcn_nonlinearity=m_cfg.get('gcn_nonlinearity', 'tanh'),
         use_subject_embed=m_cfg.get('use_subject_embed', False),
         n_subjects=n_subjects,
         subject_embed_dim=m_cfg.get('subject_embed_dim', 16),
-        subject_embed_dropout=m_cfg.get('subject_embed_dropout', 0.0)
+        subject_embed_dropout=m_cfg.get('subject_embed_dropout', 0.0),
+        # C3
+        use_domain_adv=bool(m_cfg.get('use_c3', False)),
+        domain_hidden=int(m_cfg.get('c3', {}).get('domain_hidden', 64))
     )
 
 
