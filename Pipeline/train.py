@@ -1,45 +1,42 @@
 # file: train.py
 # -*- coding: utf-8 -*-
 """
-Главный исполняемый файл для запуска обучения модели Phase 4B.
-
-Этот скрипт выполняет следующие шаги:
-1. Загружает конфигурацию.
-2. Инициализирует окружение (seed, устройство).
-3. Создает ("строит") загрузчики данных, модель, функцию потерь и оптимизатор.
-4. Запускает основной цикл обучения из модуля `trainer`.
-5. Сохраняет итоговые результаты.
+Точка входа обучения Phase 4B с логгингом артефактов для анализа.
 """
+import argparse
 from typing import Any, Dict, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, WeightedRandomSampler
+from torch.utils.data import DataLoader
 
-# Импорт компонентов из доменных модулей
 from config import default_config
-from data_loader import (ChiscoDataset, ChiscoSubset,
-                         compute_channelwise_stats, compute_subjectwise_stats,
-                         compute_hybrid_stats, create_subject_mapping,
-                         get_stratified_cv_splits, load_all_data_metaclass)
+from data_loader import (
+    ChiscoDataset,
+    ChiscoSubset,
+    compute_channelwise_stats,
+    compute_hybrid_stats,
+    compute_subjectwise_stats,
+    create_subject_mapping,
+    get_stratified_cv_splits,
+    load_all_data_metaclass,
+)
 from model import RTTMultiScale
-from trainer import (ClassBalancedFocalLoss, save_artifacts, train_loop)
+from trainer import ClassBalancedFocalLoss, save_artifacts, train_loop
 from utils import pretty_print_run, print_metrics, set_seed
 
 # =============================================================================
-# Функции-конструкторы (Builders)
+# Builders
 # =============================================================================
 
 def build_loaders(cfg: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, np.ndarray, int, int]:
-    """Создает и настраивает загрузчики данных."""
     samples = load_all_data_metaclass(
         data_dir=cfg['data']['data_dir'],
         subject_ids=cfg['data']['subject_ids'],
         task=cfg['data']['task'],
     )
 
-    # Create subject mapping for embeddings
     subject_mapping = create_subject_mapping(samples)
     n_subjects = len(subject_mapping)
 
@@ -50,77 +47,35 @@ def build_loaders(cfg: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, np.ndarr
         subject_mapping=subject_mapping
     )
     labels = np.array([s['label'] for s in samples])
-    predefined = cfg.get('cv', {}).get('predefined_split', None)
-    if predefined is not None:
-        train_idx, val_idx = predefined
-    else:
-        splits = get_stratified_cv_splits(
-            labels, cfg['cv']['n_splits'], cfg['cv']['random_state']
-        )
-        fold_index = int(cfg.get('cv', {}).get('fold_index', 0))
-        fold_index = max(0, min(fold_index, len(splits) - 1))
-        train_idx, val_idx = splits[fold_index]
+    splits = get_stratified_cv_splits(labels, cfg['cv']['n_splits'], cfg['cv']['random_state'])
+    fold_index = int(cfg.get('cv', {}).get('fold_index', 0))
+    fold_index = max(0, min(fold_index, len(splits) - 1))
+    train_idx, val_idx = splits[fold_index]
 
-    # Compute normalization statistics based on mode
+    # Нормстаты
     if cfg['data']['normalize'] == 'zscore_hybrid':
-        # NEW: Hybrid normalization (subject-wise centering + global scaling)
-        stats_dict = compute_hybrid_stats(
-            samples, train_idx, cfg['data'].get('exclude_channels')
-        )
-        dataset.norm_stats = stats_dict
+        dataset.norm_stats = compute_hybrid_stats(samples, train_idx, cfg['data'].get('exclude_channels'))
     elif cfg['data']['normalize'] == 'zscore_subject_channel':
-        # Subject-wise normalization (DEPRECATED: causes overfitting)
-        stats_dict = compute_subjectwise_stats(
-            samples, train_idx, cfg['data'].get('exclude_channels')
-        )
-        dataset.norm_stats = stats_dict
+        dataset.norm_stats = compute_subjectwise_stats(samples, train_idx, cfg['data'].get('exclude_channels'))
     elif cfg['data']['normalize'] == 'zscore_dataset_channel':
-        # Global normalization (baseline)
-        mean_c, std_c = compute_channelwise_stats(
-            samples, train_idx, cfg['data'].get('exclude_channels')
-        )
+        mean_c, std_c = compute_channelwise_stats(samples, train_idx, cfg['data'].get('exclude_channels'))
         dataset.norm_stats = {'mean': mean_c, 'std': std_c}
-    
-    # Train loader: optional class-balanced sampling without dropping data
-    train_subset = ChiscoSubset(dataset, train_idx)
-    use_sampler = cfg['training'].get('use_weighted_sampler', False)
-    # Disable sampler when using CB-Focal unless explicitly allowed
-    if cfg['loss'].get('type') == 'cb_focal' and not cfg['training'].get('allow_sampler_with_cb_focal', False):
-        use_sampler = False
 
-    if use_sampler:
-        n_classes = cfg['model']['n_classes']
-        train_labels_arr = labels[train_idx]
-        class_counts = np.bincount(train_labels_arr, minlength=n_classes)
-        # w_c = total / (num_classes * count_c)
-        weights_per_class = (len(train_labels_arr) / (n_classes * np.clip(class_counts, 1, None))).astype(np.float64)
-        sample_weights = weights_per_class[train_labels_arr]
-        sampler = WeightedRandomSampler(
-            weights=torch.as_tensor(sample_weights, dtype=torch.double),
-            num_samples=len(train_idx),
-            replacement=True
-        )
-        train_loader = DataLoader(
-            train_subset,
-            batch_size=cfg['training']['batch_size'],
-            sampler=sampler,
-            shuffle=False,
-            num_workers=cfg['training']['num_workers'],
-            pin_memory=cfg['training']['pin_memory']
-        )
-    else:
-        train_loader = DataLoader(
-            train_subset, batch_size=cfg['training']['batch_size'],
-            shuffle=True, num_workers=cfg['training']['num_workers'],
-            pin_memory=cfg['training']['pin_memory']
-        )
-    val_loader = DataLoader(
-        ChiscoSubset(dataset, val_idx), batch_size=cfg['training']['batch_size'],
-        shuffle=False, num_workers=cfg['training']['num_workers'],
+    train_loader = DataLoader(
+        ChiscoSubset(dataset, train_idx),
+        batch_size=cfg['training']['batch_size'],
+        shuffle=True,
+        num_workers=cfg['training']['num_workers'],
         pin_memory=cfg['training']['pin_memory']
     )
-    
-    # Определяем эффективное число каналов
+    val_loader = DataLoader(
+        ChiscoSubset(dataset, val_idx),
+        batch_size=cfg['training']['batch_size'],
+        shuffle=False,
+        num_workers=cfg['training']['num_workers'],
+        pin_memory=cfg['training']['pin_memory']
+    )
+
     eeg_shape = dataset[0]['eeg'].shape
     effective_channels = eeg_shape[0]
 
@@ -128,73 +83,43 @@ def build_loaders(cfg: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, np.ndarr
 
 
 def build_model(cfg: Dict[str, Any], n_channels: int, n_subjects: int) -> nn.Module:
-    """Создает экземпляр модели на основе конфигурации."""
-    m_cfg = cfg['model']
+    m = cfg['model']
     return RTTMultiScale(
-        n_channels=n_channels, n_classes=m_cfg['n_classes'],
-        proj_channels=m_cfg['proj_channels'],
-        window_size_small=m_cfg['window_size_small'], stride_small=m_cfg['stride_small'],
-        window_size_large=m_cfg['window_size_large'], stride_large=m_cfg['stride_large'],
-        d_model=m_cfg['d_model'], n_heads=m_cfg['n_heads'], ff_dim=m_cfg['ff_dim'],
-        n_layers=m_cfg['n_layers'], dropout=m_cfg['dropout'], eps=m_cfg['eps'],
-        attn_heads=m_cfg.get('attn_heads', 1), gating=m_cfg.get('gating', False),
-        cov_type=m_cfg.get('cov_type', 'corr'),
-        cov_estimator=m_cfg.get('cov_estimator', 'oas'),
-        oas_min_alpha=m_cfg.get('oas_min_alpha', 0.1),
-        # A8: SPD аугментация (по умолчанию выкл.)
-        use_spd_augment=m_cfg.get('use_spd_augment', False),
-        spd_jitter_std=m_cfg.get('spd_jitter_std', 0.05),
-        spd_jitter_prob=m_cfg.get('spd_jitter_prob', 0.5),
-        # C1: SPDNet insertion
-        use_spdnet=m_cfg.get('use_spdnet', False),
-        spdnet_dims=m_cfg.get('spdnet_dims', None),
-        spdnet_alpha=m_cfg.get('spdnet_alpha', 0.3),
-        # C1b: Tangent space orthonormal projection
-        use_tangent_ortho=m_cfg.get('use_tangent_ortho', False),
-        tangent_ortho_dim=m_cfg.get('tangent_ortho_dim', None),
-        use_gcn=m_cfg.get('use_gcn', False),
-        gcn_k=m_cfg.get('gcn_k', 8),
-        gcn_alpha=m_cfg.get('gcn_alpha', 0.3),
-        gcn_nonlinearity=m_cfg.get('gcn_nonlinearity', 'tanh'),
-        use_subject_embed=m_cfg.get('use_subject_embed', False),
-        n_subjects=n_subjects,
-        subject_embed_dim=m_cfg.get('subject_embed_dim', 16),
-        subject_embed_dropout=m_cfg.get('subject_embed_dropout', 0.0),
-        # C3
-        use_domain_adv=bool(m_cfg.get('use_c3', False)),
-        domain_hidden=int(m_cfg.get('c3', {}).get('domain_hidden', 64))
+        n_channels=n_channels,
+        n_classes=m['n_classes'],
+        proj_channels=m['proj_channels'],
+        window_size_small=m['window_size_small'], stride_small=m['stride_small'],
+        window_size_large=m['window_size_large'], stride_large=m['stride_large'],
+        d_model=m['d_model'], n_heads=m['n_heads'], ff_dim=m['ff_dim'],
+        n_layers=m['n_layers'], dropout=m['dropout'], eps=m['eps'],
+        attn_heads=m.get('attn_heads', 1),
+        cov_type=m.get('cov_type', 'corr'), oas_min_alpha=m.get('oas_min_alpha', 0.1),
+        use_subject_embed=m.get('use_subject_embed', False), n_subjects=n_subjects,
+        subject_embed_dim=m.get('subject_embed_dim', 16),
+        subject_embed_dropout=m.get('subject_embed_dropout', 0.0)
     )
 
 
 def build_criterion(cfg: Dict[str, Any], train_labels: np.ndarray) -> nn.Module:
-    """Создает экземпляр функции потерь."""
     loss_cfg = cfg['loss']
     if loss_cfg['type'] == 'cb_focal':
         counts = np.bincount(train_labels, minlength=cfg['model']['n_classes'])
-        return ClassBalancedFocalLoss(
-            class_counts=counts, beta=loss_cfg['beta'], gamma=loss_cfg['gamma']
-        )
+        return ClassBalancedFocalLoss(counts, beta=loss_cfg['beta'], gamma=loss_cfg['gamma'])
     return nn.CrossEntropyLoss()
 
 
-def build_optimizer_and_scheduler(model: nn.Module, cfg: Dict[str, Any]) -> Tuple[Any, Any]:
-    """Создает оптимизатор и планировщик скорости обучения."""
+def build_optimizer_and_scheduler(model: nn.Module, cfg: Dict[str, Any]):
     opt_cfg = cfg['optimizer']
     train_cfg = cfg['training']
-    # Опционально: отдельный weight_decay для subject embeddings
-    params_subject = []
-    params_other = []
-    if hasattr(model, 'use_subject_embed') and model.use_subject_embed:
+
+    params_subject, params_other = [], []
+    if getattr(model, 'use_subject_embed', False):
         for name, p in model.named_parameters():
-            if not p.requires_grad: continue
-            if name.startswith('subject_embed.'):
-                params_subject.append(p)
-            else:
-                params_other.append(p)
+            if not p.requires_grad:
+                continue
+            (params_subject if name.startswith('subject_embed.') else params_other).append(p)
     else:
-        for p in model.parameters():
-            if p.requires_grad:
-                params_other.append(p)
+        params_other = [p for p in model.parameters() if p.requires_grad]
 
     subject_wd = opt_cfg.get('subject_embed_weight_decay', train_cfg['weight_decay'])
     param_groups = []
@@ -204,15 +129,10 @@ def build_optimizer_and_scheduler(model: nn.Module, cfg: Dict[str, Any]) -> Tupl
         param_groups.append({'params': params_subject, 'weight_decay': subject_wd})
 
     if opt_cfg['name'] == 'adamw':
-        optimizer = torch.optim.AdamW(
-            param_groups, lr=train_cfg['learning_rate'],
-            betas=tuple(opt_cfg['betas'])
-        )
+        optimizer = torch.optim.AdamW(param_groups, lr=train_cfg['learning_rate'], betas=tuple(opt_cfg['betas']))
     else:
-        optimizer = torch.optim.Adam(
-            param_groups, lr=train_cfg['learning_rate']
-        )
-    
+        optimizer = torch.optim.Adam(param_groups, lr=train_cfg['learning_rate'])
+
     sched_cfg = cfg['scheduler']
     scheduler = None
     if sched_cfg.get('name') == 'cosine':
@@ -224,38 +144,43 @@ def build_optimizer_and_scheduler(model: nn.Module, cfg: Dict[str, Any]) -> Tupl
             scheduler = SequentialLR(optimizer, schedulers=[sched1, sched2], milestones=[warmup])
         else:
             scheduler = CosineAnnealingLR(optimizer, T_max=sched_cfg['T_max'])
-            
+
     return optimizer, scheduler
 
+
 # =============================================================================
-# Основная точка входа
+# Main
 # =============================================================================
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Train Phase 4B")
+    parser.add_argument('--save-attn', action='store_true', help='Сохранять усреднённые attention веса на валидации')
+    return parser.parse_args()
+
+
 def main() -> None:
-    """Основная функция, запускающая весь процесс обучения."""
-    # 1. Конфигурация и инициализация
+    args = parse_args()
     cfg = default_config()
+    cfg['logging']['save_attn'] = bool(args.save_attn)
+
     pretty_print_run(cfg)
     set_seed(cfg['seed'])
     device = torch.device(cfg['device'])
 
-    # 2. Создание компонентов
     train_loader, val_loader, train_labels, n_channels, n_subjects = build_loaders(cfg)
     model = build_model(cfg, n_channels, n_subjects).to(device)
     criterion = build_criterion(cfg, train_labels).to(device)
     optimizer, scheduler = build_optimizer_and_scheduler(model, cfg)
 
-    # 3. Запуск обучения
-    _, final_metrics = train_loop(
+    history, final_metrics, val_outputs, attn_stats = train_loop(
         model=model, train_loader=train_loader, val_loader=val_loader,
         criterion=criterion, optimizer=optimizer, scheduler=scheduler,
         cfg=cfg, device=device
     )
 
-    # 4. Вывод и сохранение результатов
     print("\nИтоговые метрики валидации (Fold 1):")
     print_metrics(final_metrics)
-    save_artifacts(cfg, final_metrics, model)
+    save_artifacts(cfg, final_metrics, history, val_outputs, attn_stats, model)
     print("\nОБУЧЕНИЕ PHASE 4B ЗАВЕРШЕНО")
 
 

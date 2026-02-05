@@ -170,7 +170,10 @@ class ChiscoSubset(Dataset):
         return len(self.indices)
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
-        return self.dataset[self.indices[idx]]
+        item = self.dataset[self.indices[idx]]
+        # Добавляем идентификатор исходного образца для последующего логгинга предсказаний
+        item['sample_id'] = int(self.indices[idx])
+        return item
 
 # =============================================================================
 # Функции загрузки и обработки данных

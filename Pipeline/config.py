@@ -47,7 +47,7 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
     return {
         'data': {
             'data_dir': PREPROCESSED_DIR,
-            'subject_ids': ['sub-04'],  # 'sub-03', 'sub-04', 'sub-05'
+            'subject_ids': ['sub-01'],  # 'sub-03', 'sub-04', 'sub-05'
             'task': 'imagine',
             'normalize': 'zscore_hybrid',  # Phase 4B-6: Hybrid normalization (subject centering + global scaling)
             'exclude_channels': [124],
@@ -126,6 +126,9 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
         'scheduler': {'name': 'cosine', 'T_max': 20, 'warmup_epochs': 3},
         # D1: фиксируем лучшие гиперпараметры A2
         'loss': {'type': 'cb_focal', 'beta': 0.999, 'gamma': 1.75},
+        'logging': {
+            'save_attn': False  # сохранять ли усреднённые attention веса на валидации
+        },
         'seed': RANDOM_SEED,
         'device': device,
         'checkpoint_dir': f'Train/checkpoints/phase4b_5subjects_{device.upper()}',
