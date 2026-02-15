@@ -1,8 +1,8 @@
 {
   "data": {
-    "data_dir": "/home/edward/Projects/EEG_to_Text/derivatives/preprocessed_pkl",
+    "data_dir": "/mnt/data/EEG/preprocessed_pkl",
     "subject_ids": [
-      "sub-01"
+      "sub-04"
     ],
     "task": "imagine",
     "normalize": "zscore_hybrid",

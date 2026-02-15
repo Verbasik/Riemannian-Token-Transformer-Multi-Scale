@@ -1,6 +1,8 @@
 # Активный контекст
 
 ## Текущий фокус
+- **[2026-02-15]** Обновлен путь к данным: `PREPROCESSED_DIR = Path("/mnt/data/EEG/preprocessed_pkl")` (ранее был `DATA_ROOT / "derivatives/preprocessed_pkl"`).
+- **[2026-02-15]** Дефолтный субъект в конфиге переключён обратно на `['sub-04']` — субъект с лучшими историческими метриками (f1_macro≈0.2915).
 - Инициализация Банка Памяти и фиксация текущего состояния пайплайна Phase 4B.
 - Бейзлайн: обучение `sub-04` (Fold 1), гибридная нормализация, subject embeddings включены.
 - Эксперимент A8 — SPD-аугментация: подготовлен скрипт свипа (`std ∈ {0.02, 0.03}`, `prob ∈ {0.2, 0.3}`) с лучшими базовыми настройками.
@@ -75,10 +77,18 @@
 - Исправлен дамп `config_run.json`/`history.json`/`metrics.json`: сериализация Path/torch.device/np.* через `_to_serializable` в `save_artifacts`, чтобы избежать `TypeError: PosixPath is not JSON serializable`.
 - Проверена целостность сохранённых артефактов (`Train/results/phase4b_5subjects_CUDA`): `metrics.json` с per_class, `history.json` с train/val loss, val F1, LR, grad_norm min/mean/max (23 эпох из‑за ранней остановки), `val_preds.npz` (y_true/y_pred/proba/subject_id/sample_id без NaN), `config_run.json` корректно сериализован. `attn_stats.npz` отсутствует, т.к. запуск был без `--save-attn`.
 
-### Новые утилиты постобработки (2026-02-05)
+### Новые утилиты постобработки (2026-02-05, обновлено 2026-02-15)
 - Добавлена папка `analysis_tools/` со скриптами для отчётности: распределение классов/субъектов, эффект нормализации, SPD‑спектры, кривые обучения, confusion/PR/ROC, анализ ошибок, агрегатор абляций, межсубъектные метрики/UMAP, чувствительность SPD‑аугментации, статистики attention, важность каналов (variance/веса + проекция на монтаж), гистограммы градиентных норм, сравнение классических ML, генерация схемы пайплайна и LaTeX таблицы конфига.
-- Все скрипты опираются на `analysis_tools/common.py`, сохраняют вывод в `Train/analysis/**` или `exp_dir/analysis/**` и поддерживают запуск `python -m analysis_tools.<script>`.
-- Прогон на эксперименте `Train/results/phase4b_5subjects_CUDA`: успешно сгенерированы отчёты по классам/субъектам, кривые обучения, confusion/PR/ROC, ошибки, абляции (делта к базе), метрики по субъектам, гистограмма grad_norm, чувствительность SPD‑аугментации, схема пайплайна, сравнение экспериментов. Не запущены из‑за отсутствия входов: `normalization_effect` (нет сырых train/val и norm_stats), `spd_spectra` (нет ковариаций/лог‑спектров), `attention_stats` (нет attn_stats.npz), `channel_importance` (нет checkpoint/данных).
+- Все скрипты опираются на `analysis_tools/common.py`, сохраняют вывод в `Train/analysis/**` или `exp_dir/analysis/**` и поддерживают запуск `.venv/bin/python -m analysis_tools.<script>`.
+- **[2026-02-15]** Прогон на эксперименте `Train/results/phase4b_5subjects_CUDA`: успешно сгенерированы 19 файлов анализа:
+  - ✅ `class_distribution` — распределение классов/субъектов (3 графика)
+  - ✅ `training_curves` — кривые loss/F1/LR/grad_norms (4 графика)
+  - ✅ `confusion` — confusion matrix, PR/ROC кривые, per-class bars (5 графиков)
+  - ✅ `errors` — топ ошибок и путаниц (2 CSV)
+  - ✅ `grad_norms` — гистограмма градиентных норм (1 график)
+  - ✅ `subject_effects` — метрики по субъектам (2 графика)
+  - ✅ `pipeline_schema` — схема пайплайна и LaTeX таблица конфига (2 файла)
+- ⚠️ Не запущены из‑за отсутствия специфических входов: `normalization_effect` (требует raw train/val + norm_stats), `spd_spectra` (требует covs), `attention_stats` (требует attn_stats.npz), `channel_importance` (требует checkpoint), `ablation_agg` (требует несколько экспериментов), `spd_aug_sensitivity` (требует серию экспериментов), `classical_ml_compare` (требует classical ML результаты).
 
 ### Чистка конфига (2026-02-05)
 - В `Pipeline/config.py` убраны неиспользуемые экспериментальные флаги (SPDNet, tangent_ortho, GCN/C3, SPD-augment, gating, sampler/CB-Focal сочетания, cov_estimator) и зафиксирован базовый сценарий: `subject_ids=['sub-04']`, `use_gcn=False`. Дефолтные параметры теперь отражают подтверждённый бейзлайн A2/A3/A6 без «мертвых» опций.

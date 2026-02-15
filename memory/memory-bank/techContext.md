@@ -8,7 +8,7 @@
 ## Структура проекта
 - `Pipeline/` — код обучения (config, data_loader, model, riemannian_utils, trainer, train, feature_engineering, train_classical_ml, test_dryrun)
 - `json/` — маппинги классов и текстов (`classnumber.json`, `textmaps.json`, `metaclasses.json`)
-- `derivatives/preprocessed_pkl/` — предобработанные pkl-данные (ожидается на диске)
+- `/mnt/data/EEG/preprocessed_pkl/` — предобработанные pkl-данные (новое расположение с 2026-02-15)
 - `Train/` — артефакты обучения: чекпойнты и метрики
 
 ## Запуск

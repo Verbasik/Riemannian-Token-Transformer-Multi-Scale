@@ -19,7 +19,7 @@ import torch
 PROJECT_ROOT = Path(__file__).parent.parent
 DATA_ROOT = PROJECT_ROOT
 JSON_DIR = DATA_ROOT / "json"
-PREPROCESSED_DIR = DATA_ROOT / "derivatives/preprocessed_pkl"
+PREPROCESSED_DIR = Path("/mnt/data/EEG/preprocessed_pkl")
 
 # Константы для конфигурации модели и обучения
 RANDOM_SEED = 42
@@ -47,8 +47,8 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
     return {
         'data': {
             'data_dir': PREPROCESSED_DIR,
-            # Базовый сценарий: одиночный субъект sub-01 (Fold 1)
-            'subject_ids': ['sub-01'],
+            # Базовый сценарий: одиночный субъект sub-04 (Fold 1) — лучший исторический результат
+            'subject_ids': ['sub-04'],
             'task': 'imagine',
             'normalize': 'zscore_hybrid',  # Phase 4B-6: Hybrid normalization (subject centering + global scaling)
             'exclude_channels': [124],

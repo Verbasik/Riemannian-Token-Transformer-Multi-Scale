@@ -2,8 +2,8 @@
 \hline
 Parameter & Value \\
 \hline
-data.data_dir & /home/edward/Projects/EEG_to_Text/derivatives/preprocessed_pkl \\
-data.subject_ids & ['sub-01'] \\
+data.data_dir & /mnt/data/EEG/preprocessed_pkl \\
+data.subject_ids & ['sub-04'] \\
 data.task & imagine \\
 data.normalize & zscore_hybrid \\
 data.exclude_channels & [124] \\
@@ -21,28 +21,8 @@ model.n_layers & 2 \\
 model.dropout & 0.1 \\
 model.eps & 0.0001 \\
 model.attn_heads & 1 \\
-model.gating & False \\
 model.cov_type & corr \\
-model.cov_estimator & oas \\
 model.oas_min_alpha & 0.1 \\
-model.use_spd_augment & False \\
-model.spd_jitter_std & 0.03 \\
-model.spd_jitter_prob & 0.2 \\
-model.use_spdnet & False \\
-model.spdnet_dims & [16] \\
-model.spdnet_alpha & 0.05 \\
-model.use_tangent_ortho & False \\
-model.tangent_ortho_dim & 128 \\
-model.use_gcn & True \\
-model.gcn_k & 8 \\
-model.gcn_alpha & 0.3 \\
-model.gcn_nonlinearity & tanh \\
-model.gcn_sigma & 0.05 \\
-model.gcn_K & 2 \\
-model.gcn_layers & 1 \\
-model.gcn_norm & batch \\
-model.use_c3 & False \\
-model.c3 & {'da_lambda': 0.1, 'coral_lambda': 0.01, 'domain_hidden': 64} \\
 model.use_subject_embed & True \\
 model.subject_embed_dim & 16 \\
 model.subject_embed_dropout & 0.2 \\
@@ -55,8 +35,6 @@ training.use_amp & True \\
 training.grad_clip & 1.0 \\
 training.num_workers & 4 \\
 training.pin_memory & True \\
-training.use_weighted_sampler & False \\
-training.allow_sampler_with_cb_focal & False \\
 optimizer.name & adamw \\
 optimizer.betas & [0.9, 0.999] \\
 optimizer.subject_embed_weight_decay & 0.0005 \\
