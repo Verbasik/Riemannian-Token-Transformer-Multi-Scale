@@ -61,19 +61,27 @@ def build_loaders(cfg: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, np.ndarr
         mean_c, std_c = compute_channelwise_stats(samples, train_idx, cfg['data'].get('exclude_channels'))
         dataset.norm_stats = {'mean': mean_c, 'std': std_c}
 
+    num_workers = int(cfg['training']['num_workers'])
+    loader_common = {
+        'batch_size': cfg['training']['batch_size'],
+        'num_workers': num_workers,
+        'pin_memory': cfg['training']['pin_memory'],
+    }
+    if num_workers > 0:
+        loader_common['persistent_workers'] = bool(cfg['training'].get('persistent_workers', True))
+        prefetch_factor = int(cfg['training'].get('prefetch_factor', 2))
+        if prefetch_factor > 0:
+            loader_common['prefetch_factor'] = prefetch_factor
+
     train_loader = DataLoader(
         ChiscoSubset(dataset, train_idx),
-        batch_size=cfg['training']['batch_size'],
         shuffle=True,
-        num_workers=cfg['training']['num_workers'],
-        pin_memory=cfg['training']['pin_memory']
+        **loader_common,
     )
     val_loader = DataLoader(
         ChiscoSubset(dataset, val_idx),
-        batch_size=cfg['training']['batch_size'],
         shuffle=False,
-        num_workers=cfg['training']['num_workers'],
-        pin_memory=cfg['training']['pin_memory']
+        **loader_common,
     )
 
     eeg_shape = dataset[0]['eeg'].shape

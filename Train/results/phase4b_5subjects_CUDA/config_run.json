@@ -40,7 +40,9 @@
     "use_amp": true,
     "grad_clip": 1.0,
     "num_workers": 4,
-    "pin_memory": true
+    "pin_memory": true,
+    "persistent_workers": true,
+    "prefetch_factor": 4
   },
   "cv": {
     "n_splits": 5,

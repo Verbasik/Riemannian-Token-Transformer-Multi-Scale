@@ -84,6 +84,9 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
             'grad_clip': 1.0,
             'num_workers': 4 if device == 'cuda' else 0,
             'pin_memory': device == 'cuda',
+            # Для CUDA-режима ускоряем подачу батчей.
+            'persistent_workers': device == 'cuda',
+            'prefetch_factor': 4 if device == 'cuda' else 2,
         },
         'cv': {'n_splits': 5, 'random_state': RANDOM_SEED},
         'optimizer': {
