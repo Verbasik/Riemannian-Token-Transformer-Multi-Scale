@@ -35,6 +35,8 @@ training.use_amp & True \\
 training.grad_clip & 1.0 \\
 training.num_workers & 4 \\
 training.pin_memory & True \\
+training.persistent_workers & True \\
+training.prefetch_factor & 4 \\
 optimizer.name & adamw \\
 optimizer.betas & [0.9, 0.999] \\
 optimizer.subject_embed_weight_decay & 0.0005 \\
