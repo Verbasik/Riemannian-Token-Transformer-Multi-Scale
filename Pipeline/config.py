@@ -47,8 +47,8 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
     return {
         'data': {
             'data_dir': PREPROCESSED_DIR,
-            # Базовый сценарий: одиночный субъект sub-04 (Fold 1) — лучший исторический результат
-            'subject_ids': ['sub-04'],
+            # Текущий дефолтный сценарий: одиночный субъект sub-03
+            'subject_ids': ['sub-03'],
             'task': 'imagine',
             'normalize': 'zscore_hybrid',  # Phase 4B-6: Hybrid normalization (subject centering + global scaling)
             'exclude_channels': [124],
