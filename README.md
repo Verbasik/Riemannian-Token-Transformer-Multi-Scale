@@ -22,7 +22,7 @@
 
 ## Конфигурация (Pipeline/config.py)
 - Ключевые параметры:
-  - `data`: `data_dir`, `subject_ids` (дефолт `['sub-01']`), `task`, `normalize='zscore_hybrid'`, `exclude_channels=[124]`
+  - `data`: `data_dir`, `subject_ids` (дефолт `['sub-04']`), `task`, `normalize='zscore_hybrid'`, `exclude_channels=[124]`
   - `model`: окна/шаги (128/96 и 256/128), `d_model`, `n_layers`, `cov_type='corr'`, `use_subject_embed=True`, `subject_embed_dim=16`, `subject_embed_dropout=0.2`
   - `training`: `n_epochs`, `batch_size`, `learning_rate`, `weight_decay`, `early_stopping_patience`, `use_amp`, `grad_clip`, `num_workers`, `pin_memory`
   - `cv`: `n_splits=5`, `random_state`
@@ -45,7 +45,7 @@
 - Последний сохранённый прогон: `Train/results/phase4b_5subjects_CUDA` (sub-04, Fold 1):
   - f1_macro: 0.2182, accuracy: 0.2399, balanced_accuracy: 0.2297, loss: 1.3933.
   - Артефакты: `config_run.json`, `history.json`, `metrics.json`, `val_preds.npz` (с subject_id/sample_id).
-- Исторически лучший сетап (A6 на базе A2/A3, sub-04 Fold 1) давал f1_macro≈0.2915; он соответствует текущим дефолтным гиперпараметрам. Текущий дефолт `subject_ids=['sub-01']`; для воспроизведения лучших метрик переключите на `sub-04`.
+- Исторически лучший сетап (A6 на базе A2/A3, sub-04 Fold 1) давал f1_macro≈0.2915; он соответствует текущим дефолтным гиперпараметрам и текущему дефолту `subject_ids=['sub-04']`.
 
 ## Советы по исследованию
 - Развернуть 5-fold оценку и усреднить метрики.

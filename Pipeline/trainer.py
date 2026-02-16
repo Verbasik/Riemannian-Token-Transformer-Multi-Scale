@@ -38,6 +38,13 @@ def _to_serializable(obj: Any):
         return [_to_serializable(v) for v in obj]
     return obj
 
+
+def _is_cuda_device(device: Any) -> bool:
+    """Нормализует проверку CUDA для torch.device и строк."""
+    if isinstance(device, torch.device):
+        return device.type == 'cuda'
+    return str(device) == 'cuda'
+
 # =============================================================================
 # Функции потерь и метрики
 # =============================================================================
@@ -95,10 +102,12 @@ def evaluate_with_outputs(
     attn_count = 0
 
     use_subject_embed = getattr(model, 'use_subject_embed', False)
+    non_blocking = _is_cuda_device(device)
 
     for batch in loader:
-        eeg, labels = batch['eeg'].to(device), batch['label'].to(device)
-        subject_ids = batch['subject_id'].to(device) if use_subject_embed else None
+        eeg = batch['eeg'].to(device, non_blocking=non_blocking)
+        labels = batch['label'].to(device, non_blocking=non_blocking)
+        subject_ids = batch['subject_id'].to(device, non_blocking=non_blocking) if use_subject_embed else None
         sample_ids = batch.get('sample_id')
 
         out = model(eeg, subject_ids=subject_ids, return_attn=collect_attn)
@@ -175,7 +184,8 @@ def train_loop(
     device: str
 ) -> Tuple[Dict[str, List], Dict[str, float]]:
     """Основной цикл обучения модели."""
-    use_amp = cfg['training']['use_amp'] and device == 'cuda'
+    use_cuda = _is_cuda_device(device)
+    use_amp = cfg['training']['use_amp'] and use_cuda
     scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
     best_state, best_f1, patience = None, 0.0, 0
     history: Dict[str, List] = {
@@ -196,11 +206,12 @@ def train_loop(
         total_loss = 0.0
         grad_norms = []
         for batch in train_loader:
-            eeg, labels = batch['eeg'].to(device), batch['label'].to(device)
+            eeg = batch['eeg'].to(device, non_blocking=use_cuda)
+            labels = batch['label'].to(device, non_blocking=use_cuda)
             optimizer.zero_grad(set_to_none=True)
             with torch.cuda.amp.autocast(enabled=use_amp):
                 if use_subject_embed:
-                    subject_ids = batch['subject_id'].to(device)
+                    subject_ids = batch['subject_id'].to(device, non_blocking=use_cuda)
                     logits = model(eeg, subject_ids=subject_ids)
                 else:
                     logits = model(eeg)

@@ -47,14 +47,22 @@ def _spd_eig_clamp_robust(A: torch.Tensor, eps: float, max_tries: int = 6) -> to
     B = A + jitter * eye
     for i in range(max_tries):
         try:
-            # Попробовать float64 на CPU для устойчивости
-            B64 = B.detach().to('cpu', dtype=torch.float64)
-            w64, V64 = torch.linalg.eigh(B64)
-            w64 = torch.clamp(w64, min=float(eps))
-            V = V64.to(device=A.device, dtype=A.dtype)
-            w = w64.to(device=A.device, dtype=A.dtype)
+            # Основной путь: считать на текущем устройстве.
+            w, V = _eigh_cpu_fallback(B)
+            w = torch.clamp(w, min=float(eps))
             return (V * w.unsqueeze(-2)) @ V.transpose(-1, -2)
         except Exception:
+            # Fallback на CPU только при ошибке на основном пути.
+            if A.device.type != 'cpu':
+                try:
+                    B64 = B.detach().to('cpu', dtype=torch.float64)
+                    w64, V64 = torch.linalg.eigh(B64)
+                    w64 = torch.clamp(w64, min=float(eps))
+                    V = V64.to(device=A.device, dtype=A.dtype)
+                    w = w64.to(device=A.device, dtype=A.dtype)
+                    return (V * w.unsqueeze(-2)) @ V.transpose(-1, -2)
+                except Exception:
+                    pass
             # Эскалация джиттера
             scale = (10.0 ** (i + 1)) * eps
             B = A + scale * eye

@@ -1,0 +1,2 @@
+exp,f1_macro,accuracy,loss,f1_macro_delta,accuracy_delta,loss_delta
+phase4b_5subjects_CUDA,0.27712087554374853,0.3082465972778223,1.3925785505318944,0.0,0.0,0.0
