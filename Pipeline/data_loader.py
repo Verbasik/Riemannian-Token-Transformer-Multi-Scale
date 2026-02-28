@@ -15,7 +15,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, StratifiedGroupKFold
 from torch.utils.data import Dataset
 
 from config import EPSILON, JSON_DIR
@@ -260,6 +260,94 @@ def get_stratified_cv_splits(
     """Создает стратифицированные K-Fold разрезы для кросс-валидации."""
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
     return list(skf.split(np.zeros(len(labels)), labels))
+
+
+def get_stratified_group_cv_splits(
+    labels: np.ndarray,
+    groups: np.ndarray,
+    n_splits: int = 5,
+    random_state: int = 42
+) -> List[Tuple[np.ndarray, np.ndarray]]:
+    """
+    Stratified K-Fold с группировкой по субъектам.
+
+    Гарантирует, что одна и та же группа (субъект) не будет одновременно в train и val.
+    Это критично для оценки cross-subject обобщаемости.
+
+    Description:
+    ---------------
+        Используется для контроля утечки по субъектам в кросс-валидации.
+        Сохраняет распределение классов в каждом fold при группировке по субъектам.
+
+    Args:
+    ---------------
+        labels: np.ndarray [N] - мета-классы (0..7)
+        groups: np.ndarray [N] - subject_id indices (целые числа для группировки)
+        n_splits: int - число folds (по умолчанию 5)
+        random_state: int - seed для воспроизводимости
+
+    Returns:
+    ---------------
+        List[(train_idx, val_idx)] - стратифицированные разбиения с группировкой
+
+    Example:
+    ---------------
+        >>> samples = load_all_data_metaclass(...)
+        >>> labels = np.array([s['label'] for s in samples])
+        >>> subject_mapping = create_subject_mapping(samples)
+        >>> groups = np.array([subject_mapping[s['subject']] for s in samples])
+        >>> splits = get_stratified_group_cv_splits(labels, groups, n_splits=5)
+    """
+    sgf = StratifiedGroupKFold(
+        n_splits=n_splits,
+        shuffle=True,
+        random_state=random_state
+    )
+    return list(sgf.split(X=np.arange(len(labels)), y=labels, groups=groups))
+
+
+def get_loso_splits(
+    samples: List[Dict],
+    subject_mapping: Dict[str, int]
+) -> List[Tuple[np.ndarray, np.ndarray]]:
+    """
+    Leave-One-Subject-Out кросс-валидация.
+
+    Для каждого субъекта:
+    - Test: все сэмплы этого субъекта
+    - Train: все сэмплы остальных субъектов
+
+    Это максимально строгая оценка cross-subject обобщаемости.
+
+    Description:
+    ---------------
+        Используется для оценки способности модели обобщаться на совершенно новых субъектах.
+        Каждый субъект по очереди становится тестовым набором.
+
+    Args:
+    ---------------
+        samples: List[Dict] - список всех образцов данных
+        subject_mapping: Dict[str, int] - маппинг subject_id -> integer index
+
+    Returns:
+    ---------------
+        List[(train_idx, val_idx)] - LOSO разбиения
+
+    Example:
+    ---------------
+        >>> splits = get_loso_splits(samples, subject_mapping)
+        >>> print(f"LOSO: {len(splits)} разбиений для {len(subject_mapping)} субъектов")
+    """
+    unique_subjects = sorted(subject_mapping.keys())
+    splits = []
+
+    for test_subject in unique_subjects:
+        test_mask = np.array([s['subject'] == test_subject for s in samples])
+        test_idx = np.where(test_mask)[0]
+        train_idx = np.where(~test_mask)[0]
+        splits.append((train_idx, test_idx))
+
+    return splits
 
 
 def compute_channelwise_stats(

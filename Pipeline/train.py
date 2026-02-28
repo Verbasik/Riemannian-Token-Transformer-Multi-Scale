@@ -20,6 +20,8 @@ from data_loader import (
     compute_subjectwise_stats,
     create_subject_mapping,
     get_stratified_cv_splits,
+    get_stratified_group_cv_splits,
+    get_loso_splits,
     load_all_data_metaclass,
 )
 from model import RTTMultiScale
@@ -47,10 +49,44 @@ def build_loaders(cfg: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, np.ndarr
         subject_mapping=subject_mapping
     )
     labels = np.array([s['label'] for s in samples])
-    splits = get_stratified_cv_splits(labels, cfg['cv']['n_splits'], cfg['cv']['random_state'])
+
+    # ============================================================================
+    # Subject-Aware Cross-Validation Selection
+    # ============================================================================
+    cv_mode = cfg['cv'].get('mode', 'stratified_group')
+
+    if cv_mode == 'stratified':
+        # Оригинальный режим: StratifiedKFold без группировки по субъектам
+        # ⚠️ ВНИМАНИЕ: перемешивает субъектов между train и val
+        splits = get_stratified_cv_splits(labels, cfg['cv']['n_splits'], cfg['cv']['random_state'])
+        print("⚠️  CV Mode: Stratified (перемешивает субъектов, используется для совместимости)")
+
+    elif cv_mode == 'stratified_group':
+        # Новый рекомендуемый режим: StratifiedGroupKFold
+        # ✅ ПРАВИЛЬНО: гарантирует что субъекты не пересекаются между fold'ами
+        groups = np.array([subject_mapping[s['subject']] for s in samples])
+        splits = get_stratified_group_cv_splits(
+            labels, groups,
+            n_splits=cfg['cv']['n_splits'],
+            random_state=cfg['cv']['random_state']
+        )
+        print("✅ CV Mode: Stratified Group (группировка по субъектам - РЕКОМЕНДУЕТСЯ)")
+
+    elif cv_mode == 'loso':
+        # Максимально строгий режим: Leave-One-Subject-Out
+        # 🔐 СТРОГИЙ: каждый субъект по очереди в тесте
+        splits = get_loso_splits(samples, subject_mapping)
+        print(f"🔐 CV Mode: LOSO (Leave-One-Subject-Out, {len(splits)} разбиений)")
+
+    else:
+        raise ValueError(f"Unknown CV mode: {cv_mode}. Expected 'stratified', 'stratified_group', or 'loso'")
+
     fold_index = int(cfg.get('cv', {}).get('fold_index', 0))
     fold_index = max(0, min(fold_index, len(splits) - 1))
     train_idx, val_idx = splits[fold_index]
+
+    # Logирование информации о fold
+    print(f"   Fold {fold_index + 1}/{len(splits)}: train={len(train_idx)}, val={len(val_idx)}")
 
     # Нормстаты
     if cfg['data']['normalize'] == 'zscore_hybrid':

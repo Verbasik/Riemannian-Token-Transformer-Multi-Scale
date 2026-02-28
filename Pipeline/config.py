@@ -88,7 +88,12 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
             'persistent_workers': device == 'cuda',
             'prefetch_factor': 4 if device == 'cuda' else 2,
         },
-        'cv': {'n_splits': 5, 'random_state': RANDOM_SEED},
+        'cv': {
+            'n_splits': 5,
+            'random_state': RANDOM_SEED,
+            'mode': 'stratified_group',  # 'stratified' (default behavior), 'stratified_group' (subject-aware), 'loso' (leave-one-subject-out)
+            'fold_index': 0,  # Используется для специфичной fold индекса
+        },
         'optimizer': {
             'name': 'adamw', 'betas': [0.9, 0.999],
             # A6 best: отдельный weight_decay для subject embeddings
