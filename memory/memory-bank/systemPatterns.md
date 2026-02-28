@@ -1,89 +1,310 @@
-# Архитектура и паттерны
+# System Patterns — EEG_to_Text
 
-## Слои и ответственность
-- Конфигурация: `config.default_config()` формирует единый словарь параметров запуска.
-- Данные: `data_loader` загружает pkl, формирует датасеты, маппинги и нормстаты.
-- Модель: `model.RTTMultiScale` строит токены из SPD-представлений и применяет Transformer.
-- Геометрия: `riemannian_utils` — устойчивые SPD-операции (OAS, logm, vectorize, corr).
-- Обучение: `trainer` реализует цикл, метрики, ClassBalancedFocalLoss и сохранение артефактов.
-- Сборка и запуск: `train.py` — builders компонентов и `main()`.
+## Архитектурные паттерны
 
-## Ключевые паттерны
-- Builder-функции: `build_loaders`, `build_model`, `build_criterion`, `build_optimizer_and_scheduler` упрощают конфигурирование.
-- Гибридная нормализация: subject-wise центрирование + глобальный std, снижает subject shift (Phase 4B-6).
-- Subject embeddings: персонализация в классификаторе (конкатенация к pooled признакам).
-- Стабильность SPD: eigendecomposition с фолбэками (MPS/FP16→FP32), clamp/jitter для SPD.
-- Обучение и контроль: ранняя остановка по `f1_macro`, сохранение лучшего состояния; cosine LR с warmup.
-- Валидация: Stratified K-Fold, в коде используется первый фолд (`splits[0]`).
+### 1. Modular Pipeline Architecture
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Pipeline/                            │
+├─────────────┬─────────────┬─────────────┬──────────────┤
+│  config.py  │ data_loader │   model.py  │  trainer.py  │
+│  (Config)   │  (Data)     │ (Model)     │ (Training)   │
+└──────┬──────┴──────┬──────┴──────┬──────┴──────┬───────┘
+       │             │             │             │
+       └─────────────┴─────────────┴─────────────┘
+                         │
+                    train.py
+                (Orchestration)
+```
 
-### B1 — Потери, согласованные с дисбалансом
-- Проверены LA‑CE (z+log π), Balanced Softmax (эквивалент z+log π), LDAM‑DRW (margin per class + DRW после 10 эпох) на DS1, 5‑fold.
-- Результаты: CB‑Focal (γ=1.75, β=0.999) > LA‑CE/BSCE/LDAM по macro‑F1; средний f1_macro: 0.2732 vs ~0.260–0.262 у альтернатив.
-- Интерпретация: при умеренном дисбалансе и цели macro‑F1, CB‑Focal лучше балансирует hard‑примеры. Логит‑сдвиг (log π) корректирует априоры, но смещает границы без выгоды для macro‑F1 при совпадающих train/test распределениях.
-- Практика: оставить CB‑Focal дефолтом; если возвращаться к LA‑CE/BSCE — пробовать λ<1, temperature scaling или смесь с focal.
+**Принципы**:
+- Single Responsibility: каждый модуль отвечает за одну доменную область
+- Dependency Injection: конфигурация передаётся явно
+- Separation of Concerns: данные/модель/обучение разделены
 
-### B2 — SPD ковариации и shrinkage
-- Варианты: OAS с настраиваемым `min_alpha` и Ledoit–Wolf (LW).
-- Наблюдение (Fold 1, DS1): снижение `min_alpha` до 0.01 ухудшает macro‑F1 (0.2853 < 0.2915 у базы). LW даёт чуть выше macro‑F1 (0.2930) и balanced_acc (0.3080), но разница против OAS base минимальна (≈+0.0016 F1) и требует 5‑fold подтверждения.
-- Интерпретация: чрезмерно слабый shrinkage усиливает шум в оценке корреляций, ухудшая дискриминацию; LW может быть устойчивее на коротких окнах, но выигрыш мал.
-- Практика: оставить OAS `min_alpha=0.1` базой; проверить LW на 5‑fold и DS2; избегать слишком малого `min_alpha`.
+### 2. Builder Pattern для конфигурации
+```python
+# config.py
+def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
+    """Создаёт конфигурационный словарь по умолчанию."""
+    use_cuda = torch.cuda.is_available() and (device_hint or 'cuda') == 'cuda'
+    device = 'cuda' if use_cuda else 'cpu'
+    
+    return {
+        'data': {...},
+        'model': {...},
+        'training': {...},
+        'cv': {...},
+        'optimizer': {...},
+        'scheduler': {...},
+        'loss': {...},
+        'device': device,
+        ...
+    }
+```
 
-### Балансировка данных (обновление)
-- Антипаттерн: «идеальный баланс» через сильный undersampling в мультисубъектном сценарии — приводит к потере информативных примеров и деградации метрик.
-- Рекомендуемый паттерн: сохранять весь объём данных и применять re-weighting (Class-Balanced Focal Loss уже используется) и/или `WeightedRandomSampler` для батчей.
-- Оценка должна быть subject-aware: использовать `StratifiedGroupKFold` (группа = subject) или LOSO для честной проверки переносимости.
+**Преимущества**:
+- Централизованное управление параметрами
+- Автоматическая адаптация под устройство
+- Версионность конфигураций
 
-### Инсайты абляций A1–A7
-- A2 (CB-Focal): тонкая настройка `gamma=1.75`, `beta=0.999` даёт лучший баланс precision/recall; дефолт.
-- A3 (Cosine): короткий период T=20 и небольшой warmup=3 стабильно лучше длинных периодов на DS1.
-- A4/A5 (Gating/heads): `gating=False` и `attn_heads=1` показывают лучший f1_macro на DS1; многоголовый pooling улучшает loss, но не f1.
-- A6 (Subject embeddings): лёгкая регуляция эмбеддинга (Dropout≈0.2, отдельный L2≈5e-4) помогает; увеличение dim>16 не гарантирует выигрыш по f1.
-- A7 (stride_small): уменьшение шага (80/64) ухудшает f1 и accuracy; дефолт — 96.
+### 3. Strategy Pattern для нормализации
+```python
+# data_loader.py
+if self.normalize == 'zscore':
+    # Standard z-score
+elif self.normalize == 'minmax':
+    # Min-Max scaling
+elif self.normalize == 'zscore_subject_channel':
+    # Subject-wise normalization
+elif self.normalize == 'zscore_hybrid':
+    # Hybrid: subject centering + global scaling
+```
 
-### A8 — SPD-аугментация (tangent jitter)
-- Идея: малый симметричный гауссов шум в касательном пространстве (после `spd_logm`, до `spd_vectorize`) для повышения робастности.
-- Реализация: `TangentSpaceJittering(noise_std, prob)`; включается флагом `use_spd_augment=True` в модели.
-- Параметры свипа: `spd_jitter_std ∈ {0.02, 0.03}`, `spd_jitter_prob ∈ {0.2, 0.3}`.
-- Применение: только в обучении (`model.training=True`), на обеих шкалах токенов.
-- Результаты (DS1, Fold 1): лучший сетап `std=0.03`, `prob=0.2` — f1_macro=0.2761, accuracy=0.2978, loss=1.3897. Тренд: `prob=0.2` > `0.3` по f1; при `prob=0.2` умеренный шум (`std=0.03`) > `0.02`.
+**Преимущества**:
+- Легко добавлять новые стратегии
+- Явный выбор стратегии в конфиге
+- Изоляция логики каждой стратегии
 
-### Изменения в архитектуре/конфиге
-- Добавлен `subject_embed_dropout` в модель; отдельная группа параметров оптимизатора для `subject_embed.*` с собственным weight_decay.
-- В загрузчике: поддержка `cv.fold_index`; опциональный WeightedRandomSampler отключается при `loss=cb_focal`.
-- В модельный билдер добавлена прокладка параметров A8: `use_spd_augment`, `spd_jitter_std`, `spd_jitter_prob`.
- - B2: добавлены `cov_estimator ∈ {'oas','lw'}` и `oas_min_alpha` (нижняя граница усадки OAS) для гибкого контроля shrinkage.
+### 4. Factory Pattern для компонентов обучения
+```python
+# train.py
+def build_loaders(cfg: Dict) -> Tuple[DataLoader, DataLoader, ...]:
+    """Factory для DataLoader"""
+    
+def build_model(cfg: Dict, n_channels: int, n_subjects: int) -> nn.Module:
+    """Factory для модели"""
+    
+def build_criterion(cfg: Dict, train_labels: np.ndarray) -> nn.Module:
+    """Factory для loss функции"""
+    
+def build_optimizer_and_scheduler(model, cfg) -> Tuple[Optimizer, Scheduler]:
+    """Factory для оптимизатора и scheduler"""
+```
 
-## Поток данных
-`pkl → samples → (метаклассы) → train/val split → norm stats (по train) → Dataset(нормализация, исключения каналов) → DataLoader → RTTMultiScale → trainer/evaluate → метрики/чекпойнты`
+### 5. Callback Pattern для early stopping
+```python
+# trainer.py
+if val_metrics['f1_macro'] > best_f1:
+    best_f1 = val_metrics['f1_macro']
+    best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+    patience = 0
+else:
+    patience += 1
+    if patience >= cfg['training']['early_stopping_patience']:
+        print(f"\nРанняя остановка на эпохе {epoch+1}")
+        break
+```
 
-## Артефакты
-- Чекпойнты: `Train/checkpoints/<exp>/best_model.pt`
-- Метрики: `Train/results/<exp>/metrics.json`
+## Паттерны обработки данных
 
-## Дополнительно
-- Классический ML пайплайн: экстракция спектральных/статистических/вейвлет/Хьорт признаков и обучение RF/XGBoost для сравнения с DL-бейзлайном.
+### 1. SPD Manifold Processing
+```
+EEG Signal → Covariance (OAS) → Correlation → Logarithm → Vectorize
+   [C,T]        [C,C] SPD         [C,C] SPD      [C,C]       [C(C+1)/2]
+```
 
-## Архитектурные сдвиги (предложение)
-- C1 (SPDNet-вставка до logm): BiMap + ReEig слои над SPD-ковариациями для понижения размерности и повышения устойчивости перед лог-отображением и векторизацией; ожидается существенный прирост macro‑F1.
-- C2 (GCN по электродам): графовые свёртки на структуре каналов до токенизации для повышения SNR и учёта пространственной топологии.
-  - Реализация тонкостей:
-    - Правильное применение графа: `(C,C) @ (B,C,T) → (B,C,T)`; пример `einsum('cd,bdt->bct', A, X)`.
-    - Линейный графовый шаг до линейного `channel_proj` может быть эквивалентен одной линейной матрице; добавление нелинейности (tanh/ReLU) после смешивания делает шаг нетривиальным.
-  - Наблюдения (DS1/Fold1): симплицитное сглаживание с tanh даёт небольшой сдвиг в loss/acc; macro‑F1 остаётся ниже базы. Лучшее из свипа: k=8, α=0.4.
-  - Рекомендации: перейти к обучаемому GraphConv `Y=σ(Â X W + b)` (и/или Chebyshev фильтры), добавить расстояние‑взвешенные ребра, рассмотреть multi‑hop (Â^2), residual‑skip и нормализацию.
-  - C2a (learnable GraphConv, K=2, 1 слой, tanh, BN) уменьшил macro‑F1 (≈0.2609): признак over‑smoothing и/или недостаточной глубины. Снижение K до 1, 2 слоя, ReLU+LayerNorm, Chebyshev, dropout=0.1 улучшили F1 до ≈0.2736 (всё ещё ниже базы), при росте loss: индикатор необходимости калибровки (температура/label smoothing) и свипа σ,k,K,norm. Дефолт — без GCN.
-- C3 (GRL + CORAL): доменно-инвариантные признаки по субъектам через adversarial голову и CORAL-штраф в log-пространстве для уменьшения subject shift.
+**Ключевые операции**:
+```python
+# cov_shrinkage_oas: Оценка ковариации с регуляризацией
+Σ_OAS = (1-α) * Σ_sample + α * μ * I
+где α = clip((φ + μ²) / ((T-1)(φ - tr(Σ)²/C) + 1), 0.1, 1.0)
 
-### C1 — наблюдения по первым прогоном
-- dims=[16] и [20,16] на DS1/Fold 1 уступают базе по macro‑F1; конфигурация [20,16] снижает loss и повышает precision, но F1 не растёт.
-- Вероятные причины: дрейф матриц W вне многообразия Стифеля (отсутствует переортогонализация), чрезмерное сжатие размерности.
-- Рекомендации:
-  - Ввести Stiefel-проекцию W (QR-ортогонализацию) на каждом проходе и/или эпохе.
-  - Добавить residual-mix: предпочтительно к входу (Y ≈ (1−α)·Wᵀ X W + α·Proj(Wᵀ X_in W)), а не к I; при использовании к I — держать α малым (≤0.1) и/или применять только в последнем слое.
-  - Расширить сетку dims: [24], [24,16], [32,24,16]; проверить влияние d_model/feature_proj.
-  - Увеличить эпохи/перенастроить LR для стабилизации новых слоёв.
+# spd_correlation_from_cov: Нормализация к корреляции
+D = diag(Σ)^(-1/2)
+R = D @ Σ @ D
 
-Дополнительно: конфигурация [32,24,16] с residual→I и α=0.3 привела к излишней изотропизации (F1≈0.199). Для многоступенчатых BiMap слоёв residual следует ослаблять и/или ограничивать последним уровнем.
-Новые наблюдения: при малых α (0.05–0.10) и мягких dims ([24], [24,16]) F1 остаётся ниже базы, но val loss снижается; α↑ повышает precision и снижает recall/F1. Рекомендация: α→0, либо перенос «обучаемой ортонормальной проекции» в касательное пространство (ортогональный слой над log‑векторами) как более стабильную альтернативу SPD‑BiMap.
-При α=0 и dims=[24,16] достигается наилучший среди SPDNet компромисс (F1≈0.2742, loss≈1.362), но прироста над базой нет; следовательно, SPDNet в SPD‑пространстве не окупается на DS1. Предпочтительна попытка C1b (ортогональный слой в tangent space) или возврат к базе без SPDNet.
-- C2 (GCN по электродам): при реализации необходимо корректно применять матрицу смежности к каналам: `(C,C) @ (B,C,T) → (B,C,T)` (например, `einsum('cd,bdt->bct')`). Ошибка с `'cc,bct->bct'` приводит к умножению на trace(A) и одинаковым метрикам для разных k, α.
+# spd_logm: Логарифмическое отображение
+Σ = V @ diag(λ) @ V^T
+log(Σ) = V @ diag(log(λ)) @ V^T
+
+# spd_vectorize: Извлечение верхнего треугольника
+vec(Σ) = [Σ_ij для i≤j]
+```
+
+### 2. Multi-Scale Token Generation
+```python
+def _tokens_for_scale(x, w, s, scale_id):
+    # Channel projection
+    x_pc = channel_proj(x.transpose(1,2)).transpose(1,2)
+    
+    # Windowing
+    x_win = window_signal(x_pc, w, s)  # [B, L, C, T_w]
+    
+    # SPD processing
+    cov = cov_shrinkage_oas(x_win.reshape(B*L, C, T_w))
+    vec = spd_vectorize(spd_logm(cov))
+    
+    # Feature projection + scale embedding
+    tok = feature_proj(vec).view(B, L, -1)
+    return tok + scale_emb[scale_id]
+```
+
+### 3. Attention Pooling
+```python
+# Weighted aggregation токенов
+scores = attn_pool_W(toks)           # [B, L, H]
+weights_tok = softmax(scores, dim=1) # [B, L, H]
+h_heads = einsum('blh,bld->bhd')     # [B, H, D]
+
+# Head aggregation
+head_alpha = softmax(head_weights)   # [H]
+h_attn = einsum('h,bhd->bd')         # [B, D]
+```
+
+### 4. Subject Embedding Integration
+```python
+# Embedding lookup
+subject_emb = subject_embed(subject_ids)  # [B, dim]
+subject_emb = subject_embed_drop(subject_emb)
+
+# Concatenation
+combined = cat([h_cls, h_attn, subject_emb], dim=-1)
+logits = head(combined)
+```
+
+## Паттерны обучения
+
+### 1. Class-Balanced Focal Loss
+```python
+class ClassBalancedFocalLoss(nn.Module):
+    def __init__(self, class_counts, beta, gamma):
+        # Effective number sampling
+        effective_num = 1 - β^counts
+        α = (1-β) / effective_num  # Class weights
+        
+    def forward(self, logits, targets):
+        probs = softmax(logits)
+        pt = probs[targets]
+        focal_weight = (1-pt)^γ
+        loss = -α[targets] * focal_weight * log(pt)
+        return loss.mean()
+```
+
+### 2. Differentiated Weight Decay
+```python
+# Раздельный weight_decay для subject embeddings
+params_subject = [p for n,p in model.named_parameters() 
+                  if n.startswith('subject_embed.')]
+params_other = [p for n,p in model.named_parameters() 
+                if not n.startswith('subject_embed.')]
+
+optimizer = AdamW([
+    {'params': params_other, 'weight_decay': 1e-4},
+    {'params': params_subject, 'weight_decay': 5e-4}
+])
+```
+
+### 3. Warmup + Cosine Annealing
+```python
+# Linear warmup
+scheduler1 = LinearLR(optimizer, start_factor=0.1, total_iters=3)
+
+# Cosine annealing
+scheduler2 = CosineAnnealingLR(optimizer, T_max=17)
+
+# Sequential composition
+scheduler = SequentialLR(optimizer, [sched1, sched2], milestones=[3])
+```
+
+### 4. Gradient Clipping + AMP
+```python
+scaler = GradScaler(enabled=use_amp)
+
+for batch in loader:
+    with autocast(enabled=use_amp):
+        logits = model(eeg, subject_ids)
+        loss = criterion(logits, labels)
+    
+    scaler.scale(loss).backward()
+    scaler.unscale_(optimizer)
+    
+    # Gradient norms logging
+    grad_norms = [p.grad.norm() for p in model.parameters()]
+    
+    clip_grad_norm_(model.parameters(), max_norm=1.0)
+    scaler.step(optimizer)
+    scaler.update()
+```
+
+## Паттерны анализа
+
+### 1. Artifact Collection
+```python
+def save_artifacts(cfg, metrics, history, val_outputs, attn_stats, model):
+    # Model checkpoint
+    torch.save(model.state_dict(), 'best_model.pt')
+    
+    # Predictions with metadata
+    np.savez('val_preds.npz', 
+             y_true, y_pred, proba, 
+             subject_id, sample_id)
+    
+    # Attention statistics
+    np.savez('attn_stats.npz', 
+             weights_tok_mean, head_weights, scale_lengths)
+    
+    # Metrics and config
+    json.dump(metrics, 'metrics.json')
+    json.dump(history, 'history.json')
+    json.dump(cfg, 'config_run.json')
+```
+
+### 2. Per-Subject Analysis
+```python
+# analysis_tools/subject_effects.py
+# Вычисление per-subject метрик для анализа обобщения
+for subject_id in unique_subjects:
+    mask = subject_ids == subject_id
+    subject_metrics = compute_metrics(y_true[mask], y_pred[mask])
+```
+
+### 3. Attention Visualization
+```python
+# analysis_tools/attention_stats.py
+# Визуализация attention весов по каналам и масштабам
+weights_tok_mean: [L, H]  # Средние веса по токенам
+head_weights: [H]         # Веса heads
+scale_lengths: (L_s, L_l) # Число токенов по масштабам
+```
+
+## Конвенции кода
+
+### Именование
+```python
+# Модули: snake_case (data_loader.py)
+# Классы: PascalCase (RTTMultiScale, ChiscoDataset)
+# Функции: snake_case (compute_metrics, build_loaders)
+# Константы: UPPER_CASE (RANDOM_SEED, EPSILON)
+# Приватные: _prefix ( _eigh_cpu_fallback)
+```
+
+### Типизация
+```python
+from typing import Dict, List, Optional, Tuple, Any, Callable
+
+def func(
+    arg1: int,
+    arg2: Optional[str] = None,
+    arg3: Dict[str, Any] = {}
+) -> Tuple[float, Dict]:
+    ...
+```
+
+### Документирование
+```python
+"""
+Description:
+---------------
+    Краткое описание назначения функции.
+
+Args:
+---------------
+    arg1: Описание аргумента.
+    arg2: Описание аргумента.
+
+Returns:
+---------------
+    Описание возвращаемого значения.
+"""
+```
