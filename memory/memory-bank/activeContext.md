@@ -93,17 +93,18 @@ combined = cat([h_cls, h_attn, subject_emb], dim=-1)
 
 ### Следующие шаги (ПО ПРИОРИТЕТУ)
 
-#### 🔴 КРИТИЧЕСКИЕ (Блокирующие)
-1. **Subject-aware Cross-Validation** [1-2 дня]
-   - Внедрить StratifiedGroupKFold вместо StratifiedKFold
+#### ✅ ЗАВЕРШЕНО
+1. **Subject-aware Cross-Validation** ✅ ЗАВЕРШЕНО
+   - Внедрена StratifiedGroupKFold и LOSO
    - Группировка по subject_id
-   - Важно: иначе невозможно оценить cross-subject обобщаемость
-   - Файлы: train.py, data_loader.py
+   - Код: Pipeline/data_loader.py, train.py, config.py
 
-2. **Full K-Fold Evaluation** [2-3 дня]
-   - Запустить все 5 folds × 5 субъектов
-   - Собрать mean±std
-   - Важно: одного fold недостаточно для доверительных выводов
+2. **Full K-Fold Evaluation Script** ✅ ГОТОВ К ЗАПУСКУ
+   - Создан скрипт run_full_evaluation.py
+   - 25 экспериментов (5 subj × 5 folds)
+   - Встроена статистика: Bootstrap CI, Wilcoxon тесты, Benjamini-Hochberg
+   - Запуск: `python3 run_full_evaluation.py`
+   - Время: 2-4 часа (на GPU)
 
 #### 🟡 ВЫСОКИЕ (Желательны)
 3. **Bootstrap Доверительные Интервалы** [1-2 дня]

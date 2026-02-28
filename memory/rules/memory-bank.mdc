@@ -296,6 +296,45 @@ elif cv_mode == 'loso':
 
 ---
 
+## [2026-02-28] [TRAINING]: Full K-Fold Evaluation Pipeline с статистикой
+
+**Контекст**: После реализации Subject-Aware CV нужно запустить полную оценку на всех 5 субъектах с 5 folds каждый, собрать статистику и провести статистические тесты.
+
+**Решение**: Скрипт `run_full_evaluation.py` с встроенной статистикой:
+```python
+# Фаза 1: Обучение 25 экспериментов (2-4 часа)
+for subject in ['sub-01', 'sub-02', 'sub-03', 'sub-04', 'sub-05']:
+    for fold in range(5):
+        train_model(subject, fold)
+
+# Фаза 2: Статистический анализ
+- Bootstrap 95% CI (n_bootstrap=5000)
+- Wilcoxon signed-rank тесты
+- Benjamini-Hochberg FDR коррекция (α=0.05)
+- Per-subject анализ
+- Per-fold анализ
+
+# Фаза 3: Сохранение
+- results_detailed.json (25 экспериментов)
+- results_summary.json (агрегированные)
+- statistical_analysis.json (тесты + CI)
+- statistical_analysis.txt (отчёт для чтения)
+```
+
+**Результат**:
+- ✅ Полная 5-fold оценка качества
+- ✅ Доверительные интервалы для каждого метрика
+- ✅ Статистическое сравнение между субъектами
+- ✅ Научно-готовые результаты (с CI, p-values)
+
+**Применение**: Использовать для финального отчёта, публикации результатов
+
+**Запуск**: `python3 run_full_evaluation.py`
+
+**Время**: 2-4 часа (GPU), 8-12 часов (CPU)
+
+---
+
 ## Паттерны для будущего использования
 
 ### [TEMPLATE]: Ablation Study Configuration

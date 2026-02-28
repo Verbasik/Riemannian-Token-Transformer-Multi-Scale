@@ -257,9 +257,9 @@ C_aug = expm(log_C_noisy)
 - [x] **Subject-Aware Cross-Validation** (StratifiedGroupKFold + LOSO)
 
 ### В работе →
-- [ ] 5-fold Full evaluation (все 5 subj × 5 folds)
-- [ ] Bootstrap доверительные интервалы
-- [ ] Статистические тесты (Wilcoxon, Benjamini–Hochberg)
+- [→] Full K-Fold evaluation (готов скрипт, ожидание запуска)
+- [→] Bootstrap доверительные интервалы (реализовано в скрипте)
+- [→] Статистические тесты (Wilcoxon + Benjamini-Hochberg в скрипте)
 - [ ] Temperature scaling (калибровка)
 - [ ] Ablation studies
 - [ ] Hyperparameter tuning
