@@ -4,7 +4,7 @@
 
 ### Статус проекта: Phase 4B — Реализация Subject-Aware CV
 
-**Последняя активность**: Внедрение StratifiedGroupKFold и LOSO для контроля утечки по субъектам (завершено 28 февраля 2026)
+**Последняя активность**: Исправлена логика CV для per-subject full evaluation (fallback с `stratified_group` на `stratified`) и добавлена валидация пустых fold'ов (2 марта 2026)
 
 ### Текущая конфигурация по умолчанию
 ```python
@@ -17,6 +17,54 @@ normalize = 'zscore_hybrid'
 ```
 
 ### Последние изменения
+
+#### Phase 4B-10: Фикс CV-режима для per-subject evaluation ✅ [2 марта 2026]
+**Проблема**: При запуске одного субъекта `stratified_group` приводил к пустой валидации (`val=0`) и падению на `need at least one array to concatenate`.
+
+**Изменение**:
+- `Pipeline/train.py`: если в данных <2 уникальных групп, `stratified_group` автоматически переключается на `stratified`.
+- `Pipeline/train.py`: добавлена явная проверка на пустой `train/val` fold с понятной ошибкой.
+- `run_full_evaluation.py`: для per-subject запусков явно используется `cv_mode='stratified'`.
+
+**Результат**:
+- Устранена ошибка `need at least one array to concatenate` из-за `val=0`.
+- Full evaluation корректно обучается по фолдам внутри каждого субъекта.
+
+---
+
+#### Phase 4B-9: Исправление пути данных + fail-fast в full evaluation ✅ [2 марта 2026]
+**Проблема**: Данные перемещены в `/mnt/data/derivatives/preprocessed_pkl`, а конфиг использовал legacy путь `/mnt/data/EEG/preprocessed_pkl`.
+
+**Изменение**:
+- `Pipeline/config.py`: добавлен `_resolve_preprocessed_dir()` с fallback по кандидатам путей и поддержкой `EEG_PREPROCESSED_DIR`.
+- `run_full_evaluation.py`: добавлен вывод `Data dir`, счетчики `success_experiments/failed_experiments`.
+- `run_full_evaluation.py`: при 0 успешных экспериментов скрипт теперь завершает работу с понятной ошибкой.
+
+**Результат**:
+- Устранена причина загрузки `0` сэмплов при корректно смонтированных данных.
+- Исключен ложный статус "pipeline completed successfully" при полном провале обучения.
+
+---
+
+#### Phase 4B-8: Фикс программного запуска train.main ✅ [2 марта 2026]
+**Проблема**: `run_full_evaluation.py` вызывал `train_main(cfg)`, но `Pipeline/train.py::main()` не принимал аргументы.
+
+**Изменение**:
+```python
+# Pipeline/train.py
+def main(cfg: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    if cfg is None:
+        # CLI режим
+    else:
+        # Программный режим из run_full_evaluation.py
+```
+
+**Результат**:
+- Устранена ошибка `main() takes 0 positional arguments but 1 was given`
+- Сохранена обратная совместимость CLI (`python3 Pipeline/train.py`)
+- `main(cfg)` теперь возвращает `final_metrics` для агрегации в full evaluation
+
+---
 
 #### Phase 4B-7: Subject-Aware Cross-Validation ✅ [28 февраля 2026]
 **Изменение**: Внедрены функции StratifiedGroupKFold и LOSO для правильной кросс-валидации

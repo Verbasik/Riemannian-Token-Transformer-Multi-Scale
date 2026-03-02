@@ -8,6 +8,7 @@
 """
 from pathlib import Path
 from typing import Any, Dict, Optional
+import os
 
 import torch
 
@@ -20,6 +21,31 @@ PROJECT_ROOT = Path(__file__).parent.parent
 DATA_ROOT = PROJECT_ROOT
 JSON_DIR = DATA_ROOT / "json"
 PREPROCESSED_DIR = Path("/mnt/data/EEG/preprocessed_pkl")
+
+
+def _resolve_preprocessed_dir() -> Path:
+    """
+    Возвращает первый существующий каталог с preprocessed pkl.
+    Приоритет:
+    1) ENV EEG_PREPROCESSED_DIR
+    2) /mnt/data/derivatives/preprocessed_pkl (актуальный)
+    3) /mnt/data/EEG/preprocessed_pkl (legacy)
+    4) <project>/derivatives/preprocessed_pkl (локальный)
+    """
+    env_dir = os.getenv("EEG_PREPROCESSED_DIR")
+    candidates = []
+    if env_dir:
+        candidates.append(Path(env_dir))
+    candidates.extend([
+        Path("/mnt/data/derivatives/preprocessed_pkl"),
+        Path("/mnt/data/EEG/preprocessed_pkl"),
+        PROJECT_ROOT / "derivatives" / "preprocessed_pkl",
+    ])
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0] if candidates else PREPROCESSED_DIR
 
 # Константы для конфигурации модели и обучения
 RANDOM_SEED = 42
@@ -44,9 +70,10 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
     """
     use_cuda = torch.cuda.is_available() and (device_hint or 'cuda') == 'cuda'
     device = 'cuda' if use_cuda else 'cpu'
+    data_dir = _resolve_preprocessed_dir()
     return {
         'data': {
-            'data_dir': PREPROCESSED_DIR,
+            'data_dir': data_dir,
             # Текущий дефолтный сценарий: одиночный субъект sub-03
             'subject_ids': ['sub-03'],
             'task': 'imagine',

@@ -65,12 +65,19 @@ def build_loaders(cfg: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, np.ndarr
         # Новый рекомендуемый режим: StratifiedGroupKFold
         # ✅ ПРАВИЛЬНО: гарантирует что субъекты не пересекаются между fold'ами
         groups = np.array([subject_mapping[s['subject']] for s in samples])
-        splits = get_stratified_group_cv_splits(
-            labels, groups,
-            n_splits=cfg['cv']['n_splits'],
-            random_state=cfg['cv']['random_state']
-        )
-        print("✅ CV Mode: Stratified Group (группировка по субъектам - РЕКОМЕНДУЕТСЯ)")
+        n_unique_groups = np.unique(groups).size
+        if n_unique_groups < 2:
+            # Для single-subject запуска SGKF неприменим: val fold может быть пустым.
+            # В этом сценарии откатываемся на обычный стратифицированный режим.
+            print("⚠️  CV Mode: Stratified Group недоступен для одного субъекта, fallback -> Stratified")
+            splits = get_stratified_cv_splits(labels, cfg['cv']['n_splits'], cfg['cv']['random_state'])
+        else:
+            splits = get_stratified_group_cv_splits(
+                labels, groups,
+                n_splits=cfg['cv']['n_splits'],
+                random_state=cfg['cv']['random_state']
+            )
+            print("✅ CV Mode: Stratified Group (группировка по субъектам - РЕКОМЕНДУЕТСЯ)")
 
     elif cv_mode == 'loso':
         # Максимально строгий режим: Leave-One-Subject-Out
@@ -84,6 +91,12 @@ def build_loaders(cfg: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, np.ndarr
     fold_index = int(cfg.get('cv', {}).get('fold_index', 0))
     fold_index = max(0, min(fold_index, len(splits) - 1))
     train_idx, val_idx = splits[fold_index]
+    if len(train_idx) == 0 or len(val_idx) == 0:
+        raise ValueError(
+            f"Пустой fold: train={len(train_idx)}, val={len(val_idx)}. "
+            f"cv_mode={cv_mode}, n_samples={len(labels)}. "
+            "Проверьте режим CV и число субъектов в запуске."
+        )
 
     # Logирование информации о fold
     print(f"   Fold {fold_index + 1}/{len(splits)}: train={len(train_idx)}, val={len(val_idx)}")
@@ -202,10 +215,15 @@ def parse_args():
     return parser.parse_args()
 
 
-def main() -> None:
-    args = parse_args()
-    cfg = default_config()
-    cfg['logging']['save_attn'] = bool(args.save_attn)
+def main(cfg: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    if cfg is None:
+        args = parse_args()
+        cfg = default_config()
+        cfg['logging']['save_attn'] = bool(args.save_attn)
+    else:
+        cfg = dict(cfg)
+        cfg.setdefault('logging', {})
+        cfg['logging'].setdefault('save_attn', False)
 
     pretty_print_run(cfg)
     set_seed(cfg['seed'])
@@ -226,6 +244,7 @@ def main() -> None:
     print_metrics(final_metrics)
     save_artifacts(cfg, final_metrics, history, val_outputs, attn_stats, model)
     print("\nОБУЧЕНИЕ PHASE 4B ЗАВЕРШЕНО")
+    return final_metrics
 
 
 if __name__ == '__main__':

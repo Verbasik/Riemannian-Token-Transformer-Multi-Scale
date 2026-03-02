@@ -4,6 +4,65 @@
 
 ### Phase 4B — Текущая версия (Январь 2025)
 
+#### Phase 4B-10: Исправление CV-режима для per-subject Full Evaluation ✅
+**Дата**: 2 марта 2026
+**Статус**: Завершено
+
+**Изменения**:
+- Добавлен fallback `stratified_group -> stratified` при одном субъекте в `Pipeline/train.py`.
+- Добавлена проверка на пустые fold'ы (`train==0` или `val==0`) с явной ошибкой.
+- В `run_full_evaluation.py` per-subject запуски переведены на `cv_mode='stratified'`.
+
+**Результат**:
+- Устранено падение `need at least one array to concatenate`.
+- Валидация по фолдам стала корректной для сценария `subject_ids=[single_subject]`.
+
+**Файлы**:
+- `Pipeline/train.py`
+- `run_full_evaluation.py`
+
+---
+
+#### Phase 4B-9: Обновление пути данных и проверка 0-success в Full Evaluation ✅
+**Дата**: 2 марта 2026
+**Статус**: Завершено
+
+**Изменения**:
+- В `Pipeline/config.py` добавлена динамическая резолюция каталога preprocessed данных:
+  - `/mnt/data/derivatives/preprocessed_pkl` (приоритет)
+  - `/mnt/data/EEG/preprocessed_pkl` (legacy)
+  - `<project>/derivatives/preprocessed_pkl` (локальный fallback)
+  - `EEG_PREPROCESSED_DIR` (переменная окружения)
+- В `run_full_evaluation.py` добавлен fail-fast при `success_experiments == 0`.
+
+**Результат**:
+- Исключены ложные падения из-за устаревшего пути `data_dir`.
+- Исключен ложный финальный статус успешности при полном отсутствии успешных запусков.
+
+**Файлы**:
+- `Pipeline/config.py`
+- `run_full_evaluation.py`
+
+---
+
+#### Phase 4B-8: Совместимость `train.main(cfg)` для Full Evaluation ✅
+**Дата**: 2 марта 2026
+**Статус**: Завершено
+
+**Изменения**:
+- Обновлена сигнатура `Pipeline/train.py::main` для поддержки программного вызова с конфигом
+- Добавлен возврат `final_metrics` из `main(cfg)` для агрегатора `run_full_evaluation.py`
+- Сохранен CLI-режим без изменений (`python3 Pipeline/train.py`)
+
+**Результат**:
+- Устранена массовая ошибка запуска `main() takes 0 positional arguments but 1 was given`
+- Разблокирован цикл `subject × fold` в `run_full_evaluation.py`
+
+**Файлы**:
+- `Pipeline/train.py` — обновлен интерфейс `main`
+
+---
+
 #### Phase 4B-6: Гибридная нормализация ✅
 **Дата**: Январь 2025
 **Статус**: Завершено

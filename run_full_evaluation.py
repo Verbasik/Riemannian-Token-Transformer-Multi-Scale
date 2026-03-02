@@ -68,6 +68,9 @@ def run_full_evaluation() -> Dict[str, Any]:
     """
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
+    base_cfg = default_config()
+    data_dir = str(base_cfg['data']['data_dir'])
+
     results = {
         'metadata': {
             'timestamp': datetime.now().isoformat(),
@@ -76,6 +79,7 @@ def run_full_evaluation() -> Dict[str, Any]:
             'n_folds': N_FOLDS,
             'n_experiments': len(SUBJECTS) * N_FOLDS,
             'subjects': SUBJECTS,
+            'data_dir': data_dir,
         },
         'experiments': [],
         'per_subject': {},
@@ -93,6 +97,7 @@ def run_full_evaluation() -> Dict[str, Any]:
     print(f"  Folds: {N_FOLDS}")
     print(f"  Total experiments: {total_experiments}")
     print(f"  CV Mode: stratified_group (subject-aware)")
+    print(f"  Data dir: {data_dir}")
     print("=" * 100 + "\n")
 
     # Run each subject × fold combination
@@ -113,7 +118,9 @@ def run_full_evaluation() -> Dict[str, Any]:
                 cfg = default_config()
                 cfg['data']['subject_ids'] = [subject_id]
                 cfg['cv']['fold_index'] = fold_idx
-                cfg['cv']['mode'] = 'stratified_group'  # Enforce subject-aware CV
+                # Для per-subject прогона (1 субъект) SGKF неприменим.
+                # Используем стратифицированный CV внутри субъекта.
+                cfg['cv']['mode'] = 'stratified'
 
                 # Train and get metrics
                 metrics = train_main(cfg)
@@ -146,6 +153,11 @@ def run_full_evaluation() -> Dict[str, Any]:
     print("\n" + "=" * 100)
     print("✅ TRAINING PHASE COMPLETED")
     print("=" * 100)
+
+    success_count = sum(1 for exp in results['experiments'] if exp['status'] == 'success')
+    failed_count = len(results['experiments']) - success_count
+    results['metadata']['success_experiments'] = success_count
+    results['metadata']['failed_experiments'] = failed_count
 
     return results
 
@@ -505,6 +517,11 @@ def main():
     try:
         # Phase 1: Training
         detailed_results = run_full_evaluation()
+        if detailed_results['metadata'].get('success_experiments', 0) == 0:
+            raise RuntimeError(
+                "Нет успешных экспериментов: проверьте cfg['data']['data_dir'] и наличие "
+                "каталогов /mnt/data/derivatives/preprocessed_pkl/sub-*/eeg/*.pkl"
+            )
 
         # Phase 2: Statistical Analysis
         analysis = perform_statistical_analysis(detailed_results)
