@@ -2,6 +2,29 @@
 СРАВНИТЕЛЬНЫЙ АНАЛИЗ: review.txt vs Кодовая база (Pipeline/)
 ═══════════════════════════════════════════════════════════════════════════════
 
+ОБНОВЛЕНИЕ СТАТУСА (2026-03-02)
+───────────────────────────────────────────────────────────────────────────────
+✅ Уже сделано:
+1. Исправлен программный вызов обучения: `train.main(cfg)` (убран блокер `main() takes 0 positional arguments`).
+2. Обновлена резолюция пути данных:
+   - приоритет `/mnt/data/derivatives/preprocessed_pkl`
+   - fallback: legacy path + env `EEG_PREPROCESSED_DIR`.
+3. Реализован Subject-Aware CV в кодовой базе (`stratified_group` + `loso`).
+4. Добавлен защитный fallback для single-subject запуска:
+   `stratified_group -> stratified`, чтобы избежать `val=0`.
+5. Выполнен full-evaluation прогон: 25/25 успешных запусков.
+6. Сформированы агрегированные результаты и статистика:
+   - `results_detailed.json`
+   - `results_summary.json`
+   - `statistical_analysis.json/.txt`
+
+→ Что осталось сделать:
+1. Обновить `review.txt` (разделы 10.7, 11.1, 11.7, 13) под полнофолдовые результаты.
+2. Добавить калибровку вероятностей (Temperature Scaling + ECE/NLL/Brier).
+3. Убрать deprecated AMP API (`torch.cuda.amp.*` -> `torch.amp.*`).
+4. Уточнить формулировку протокола в отчёте:
+   full 5-fold выполнен per-subject; cross-subject проверка — отдельным LOSO/SGKF экспериментом.
+
 СТАТУС: 92% СООТВЕТСТВИЕ | Phase 4B готов к улучшениям
 
 ───────────────────────────────────────────────────────────────────────────────
