@@ -23,7 +23,17 @@ Full K-Fold Cross-Validation with Subject-Aware CV
     Train/results/full_evaluation/
     ├── results_detailed.json
     ├── results_summary.json
-    └── statistical_analysis.txt
+    ├── statistical_analysis.json
+    ├── statistical_analysis.txt
+    ├── plots/
+    │   ├── cv_boxplot.png
+    │   ├── subject_fold_heatmap.png
+    │   ├── bootstrap_ci.png
+    │   └── overall_metrics_bar.png
+    └── tables/
+        ├── full_eval_summary.csv
+        ├── per_subject_metrics.csv
+        └── metrics_report.md
 """
 
 # =============================================================================
@@ -654,16 +664,33 @@ def main() -> bool:
         print("=" * 100)
         save_results(detailed_results, analysis)
 
+        # Phase 4: Генерация визуализаций
+        print("\n" + "=" * 100)
+        print("GENERATING VISUALIZATIONS")
+        print("=" * 100)
+        try:
+            from visualization import save_full_eval_plots
+            save_full_eval_plots(detailed_results, analysis, RESULTS_DIR)
+        except Exception as exc:
+            print(f'[viz] Визуализация пропущена: {exc}')
+
         # Финальное резюме
         print("\n" + "=" * 100)
         print("🎉 FULL EVALUATION PIPELINE COMPLETED SUCCESSFULLY")
         print("=" * 100)
         print(f"\nResults saved to: {RESULTS_DIR}")
         print("Files:")
-        print(f"  - results_detailed.json (detailed per-experiment results)")
-        print(f"  - results_summary.json (aggregated summary)")
+        print(f"  - results_detailed.json  (detailed per-experiment results)")
+        print(f"  - results_summary.json   (aggregated summary)")
         print(f"  - statistical_analysis.json (statistical tests)")
-        print(f"  - statistical_analysis.txt (human-readable report)")
+        print(f"  - statistical_analysis.txt  (human-readable report)")
+        print(f"  - plots/cv_boxplot.png          (metric distributions)")
+        print(f"  - plots/subject_fold_heatmap.png (subject × fold grid)")
+        print(f"  - plots/bootstrap_ci.png         (95% CI per subject)")
+        print(f"  - plots/overall_metrics_bar.png  (mean ± std bar chart)")
+        print(f"  - tables/full_eval_summary.csv")
+        print(f"  - tables/per_subject_metrics.csv")
+        print(f"  - tables/metrics_report.md")
         print("\n")
 
         return True

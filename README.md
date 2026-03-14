@@ -1,446 +1,341 @@
 <div align="center">
 
-# 🧠 EEG to Text
-## Imagined-Speech EEG Decoder
+# 🧠 Memora
 
-Дeкодирование воображаемой речи с помощью **Римановой геометрии** + **мультимасштабный Transformer**
+**Production memory architecture for AI coding agents**
 
-```
-╔═══════════════════════════════════════════════════════════════╗
-║  Классификация EEG сигналов в 8 мета-классов                  ║
-║  Riemannian SPD-токены + MultiScale Attention Pooling         ║
-╚═══════════════════════════════════════════════════════════════╝
-```
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Standard: AGENTS.md](https://img.shields.io/badge/Standard-AGENTS.md-black?logo=markdown&logoColor=white)](./AGENTS.md)
+[![Status](https://img.shields.io/badge/Status-InProgress-0f766e?style=flat-square)](.)
+[![Built with](https://img.shields.io/badge/Built_with-Markdown-blue?logo=markdown&logoColor=white)](.)
+
+<p>
+  <strong>Progressive context loading</strong> ·
+  <strong>Canonical knowledge ownership</strong> ·
+  <strong>Cross-tool compatibility</strong>
+</p>
+
+### Supported AI Toolchains
+
+[![Claude Code](https://img.shields.io/badge/Claude_Code-✓-7c3aed?style=flat)](.)
+[![Codex CLI](https://img.shields.io/badge/Codex_CLI-✓-0f172a?style=flat)](.)
+[![Qwen Code](https://img.shields.io/badge/Qwen_Code-✓-0369a1?style=flat)](.)
+[![OpenCode](https://img.shields.io/badge/OpenCode-✓-065f46?style=flat)](.)
 
 ---
-
-<a href="#-быстрый-старт"><img src="https://img.shields.io/badge/Quickstart-ready-00b894?style=for-the-badge" alt="Quickstart"></a>
-<a href="#-требования"><img src="https://img.shields.io/badge/Python-3.12%2B-blue?style=for-the-badge" alt="Python"></a>
-<a href="#-требования"><img src="https://img.shields.io/badge/PyTorch-2.2%2B-ee4c2c?style=for-the-badge" alt="PyTorch"></a>
-<a href="#-данные"><img src="https://img.shields.io/badge/Data-Chisco-informational?style=for-the-badge" alt="Data"></a>
-<a href="#-бенчмарки"><img src="https://img.shields.io/badge/Status-Benchmark-6f42c1?style=for-the-badge" alt="Status"></a>
-<a href="#-лицензия"><img src="https://img.shields.io/badge/License-CUSTOM-lightgrey?style=for-the-badge" alt="License"></a>
-
-<sub>📧 **Автор:** Вербецкий Эдуард Игоревич · МАИ (НИУ) · [verbasik@gmail.com](mailto:verbasik@gmail.com)</sub>
 
 </div>
 
----
+## 📌 Why Memora?
 
-## 📑 Навигация
+**Memora** transforms chaotic project context into a **managed, routable, and verifiable knowledge architecture** for AI agents.
 
-| 🚀 Быстрый старт | 📚 Полная документация | 🔧 Конфигурация |
-|:---:|:---:|:---:|
-| [Установка](#-быстрый-старт) | [Использование](#-использование) | [Параметры](#-конфигурация) |
-| [Первый запуск](#проверка-1-эпоха) | [Архитектура](#-архитектура) | [Структура](#-структура-проекта) |
+Instead of loading the entire memory bank at startup, Memora uses **progressive disclosure**:
 
----
+- **Agent** reads minimal required context
+- **No duplicate facts** across files — canonical ownership
+- **Predictable behavior** across different tools
+- **Sustainable engineering memory**, not noise
 
-## ✨ Ключевые особенности
-
-<table>
-<tr>
-<td width="50%">
-
-### 🎯 Точность & Устойчивость
-- ✅ **F1-macro: 0.265 ± 0.011**
-- ✅ **Accuracy: 0.288 ± 0.013**
-- ✅ **Balanced Accuracy: 0.285 ± 0.014**
-- ✅ **Выше случайного (~0.125) в 2.3x**
-
-</td>
-<td width="50%">
-
-### 🧮 Технологический стек
-- 🔷 **Риманова геометрия** (SPD матрицы)
-- 🔶 **Мультимасштабные токены** (128/96 + 256/128)
-- 🟦 **Transformer архитектура** (2 слоя, 4 heads)
-- 🟩 **Гибридная нормализация** + Subject embeddings
-
-</td>
-</tr>
-</table>
+> When AI agents work on long-lived projects, they need structured memory, not just context windows.
 
 ---
 
-## 🚀 Быстрый старт
+## 🎯 What is Memora?
 
-### 📋 Требования
+A **cross-tool production memory layer** for engineering repositories where AI agents work as **participants in long-lived development**, not stateless helpers.
+
+### How It Works
 
 ```
-Python 3.12+
-PyTorch 2.2+
-CUDA 11.8+ (опционально, для ускорения)
+Agent starts
+    ↓
+Reads: AGENTS.md
+    ↓
+Checks: memory-bank/INDEX.md
+    ↓
+Loads: Only relevant files
+    ↓
+Executes: Task
+    ↓
+Updates: CURRENT.md, HANDOFF.md
+    ↓
+Promotes: Durable insights → Stable files
 ```
 
-### 💻 Установка
+### Three outcomes
+
+- ⬇️ **Fewer tokens** in context
+- ⬆️ **Consistent** responses
+- ✨ **Better** long-term agent work
+
+---
+
+## 🔑 Core Principles
+
+| Principle | Meaning |
+|-----------|---------|
+| 🎯 **Canonical ownership** | One fact lives in one place |
+| 📦 **Progressive loading** | Load only what you need |
+| ⏰ **Temporal metadata** | Every fact has a verification date |
+| 🔌 **Thin adapters** | Tool-specific files are adapters, not duplicates |
+| 🔒 **Session isolation** | Session context lives in `.local/`, not mixed with stable knowledge |
+| 📋 **Explicit decisions** | Architecture decisions go to `DECISIONS.md` + `ADR/` |
+| 🛡️ **Security-first** | No secrets, tokens, or PII in memory |
+| ⚖️ **Constitution-first** | All changes must respect `CONSTITUTION.md` |
+
+---
+
+## 🏗️ Architecture
+
+```
+AGENTS.md (canonical instructions)
+    ↓
+memory-bank/INDEX.md (routing layer)
+    ├→ PROJECT.md (identity & scope)
+    ├→ ARCHITECTURE.md (system design)
+    ├→ CONVENTIONS.md (engineering rules)
+    ├→ TESTING.md (validation flow)
+    ├→ DECISIONS.md + ADR/ (why decisions exist)
+    ├→ AREAS/ (subsystem knowledge)
+    ├→ PATTERNS/ (reusable techniques)
+    ├→ .local/CURRENT.md (session state)
+    └→ .local/HANDOFF.md (next-session briefing)
+         ↓
+    Promotion pipeline → stable files
+```
+
+---
+
+## 📂 Repository Structure
+
+```
+memora/
+├── AGENTS.md                 # ⭐ Entry point for all agents
+├── CLAUDE.md                 # Claude Code adapter
+├── MANIFESTO.md              # Standard specification
+├── memory-bank/
+│   ├── INDEX.md              # Routing table (what to read when)
+│   ├── CONSTITUTION.md       # Inviolable principles
+│   ├── PROJECT.md            # Project identity & scope
+│   ├── ARCHITECTURE.md       # System design
+│   ├── CONVENTIONS.md        # Code style & naming
+│   ├── TESTING.md            # Test strategy
+│   ├── DECISIONS.md          # Decision registry
+│   ├── CHANGELOG.md          # Significant milestones
+│   ├── LIFECYCLE.md          # Memory operations flow
+│   ├── OPEN_QUESTIONS.md     # Unresolved issues
+│   ├── ADR/                  # Architecture Decision Records
+│   ├── PATTERNS/             # Reusable techniques
+│   ├── AREAS/                # Subsystem knowledge
+│   ├── .local/               # 🚫 gitignored
+│   │   ├── CURRENT.md        # Current session state
+│   │   ├── HANDOFF.md        # Next session briefing
+│   │   └── SESSIONS/         # Session logs
+│   └── ARCHIVE/              # Retired sessions
+├── .claude/                  # Claude Code integration
+├── .codex/                   # Codex CLI integration
+├── .qwen/                    # Qwen Code integration
+├── .opencode/                # OpenCode integration
+└── bin/memora.js             # CLI tool
+```
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Node.js `>=16`
+- `bash` (macOS/Linux; Windows: Git Bash/WSL)
+
+### 1️⃣ Initialize CLI
 
 ```bash
-# Создание виртуального окружения
-python -m venv .venv
-source .venv/bin/activate  # На Windows: .venv\Scripts\activate
-
-# Установка зависимостей
-pip install -r requirements.txt
+npm install -g ./memora-cli-X.X.X.tgz
+# or for development
+npm link
 ```
 
-> **💡 Совет:** Для GPU-ускорения установите `torch` с поддержкой CUDA:
-> ```bash
-> pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-> ```
-
-### 📁 Данные
-
-```
-Предобработанные EEG сигналы:
-├── /mnt/data/derivatives/preprocessed_pkl/
-│   └── <subject>/eeg/*task-imagine*.pkl
-│
-Словари и маппинги:
-├── json/
-│   ├── classnumber.json      (39 исходных классов)
-│   ├── textmaps.json         (текстовые описания)
-│   └── metaclasses.json      (мэппинг 39→8)
-```
-
-### ⚡ Первый запуск (Test DryRun)
+### 2️⃣ Bootstrap a New Project
 
 ```bash
-# Проверка на 1 эпоху (быстро!)
-python3 Pipeline/test_dryrun.py
+memora init ./my-project
+cd my-project
 ```
 
-✅ Если завершилось успешно — окружение готово!
+### 3️⃣ Fill Core Context
+
+Update these files with your project details:
+
+- `memory-bank/PROJECT.md` — What is this project?
+- `memory-bank/ARCHITECTURE.md` — How does it work?
+- `memory-bank/TESTING.md` — How do we validate?
+- `memory-bank/CONVENTIONS.md` — How do we write code?
+
+### 4️⃣ Connect Your AI Tool
+
+**Claude Code:**
+```bash
+claude .
+```
+
+**Codex CLI:**
+```bash
+codex --trust-project
+```
+
+**Qwen Code:**
+Update `.qwen/settings.json` with `AGENTS.md` in context files.
 
 ---
 
-## 📖 Использование
+## 🛠️ Memory Skills
 
-### 🎓 Обучение Deep Learning модели
+Memora includes **6 operational skills** to maintain memory integrity:
+
+### 🔧 `memory-bootstrap`
+**First-run initialization** — Explores your project and fills `PROJECT.md`, `ARCHITECTURE.md`, etc.
+- Run once after `memora init`
+- Auto-detects stack, modules, tests
+- Proposes `CONSTITUTION.md` principles for human review
+
+### 📝 `update-memory`
+**Session finalization** — Updates after task completion
+- Refreshes `CURRENT.md` (session state)
+- Refreshes `HANDOFF.md` (next-session briefing)
+- Promotes durable insights to `DECISIONS.md`, `PATTERNS/`
+
+### 🔍 `memory-audit`
+**Integrity check** — Weekly or before major tasks
+- Detects stale verifications
+- Finds architectural drift
+- Checks for orphaned decisions
+- Scans for credential leaks
+
+### 🔗 `memory-consolidate`
+**Multi-session promotion** — Weekly or after several sessions
+- Moves session notes → stable files
+- Reduces duplicates and drift
+
+### 🧹 `memory-gc`
+**Cleanup** — Monthly or when `SESSIONS/` > 20 files
+- Archives old sessions
+- Compacts `CURRENT.md`
+- Cleans replaced solutions
+
+### ❓ `memory-clarify`
+**Gap analysis** — When audit finds issues or before major features
+- Analyzes missing knowledge
+- Checks decision consistency
+- Generates targeted questions for `OPEN_QUESTIONS.md`
+
+---
+
+## 📊 Compatibility Matrix
+
+| Feature | Claude Code | Codex CLI | Qwen Code | OpenCode |
+|---------|:----------:|:---------:|:---------:|:--------:|
+| Instructions | `CLAUDE.md` | Native | `settings.json` | Native |
+| Skills/Commands | `.claude/skills/` | `.codex/skills/` | `.qwen/agents/` | `.opencode/commands/` |
+| Memory files | ✅ Shared | ✅ Shared | ✅ Shared | ✅ Shared |
+| Security mode | `permissions.deny` | Sandbox | `.qwenignore` | Patterns |
+
+---
+
+## ⚡ Recommended Workflow
+
+```
+1. Start task → 2. Read AGENTS.md → 3. Check INDEX.md
+    ↓
+4. Load minimal files → 5. Execute work
+    ↓
+6. Update CURRENT.md → 7. Write HANDOFF.md
+    ↓
+8. Durable insight? → YES: Promote to DECISIONS/ADR/PATTERNS
+    ↓
+9. Finish session
+```
+
+**Golden rule:** Don't load all memory bank. Load only what you need. Promote only durable knowledge.
+
+---
+
+## 🔐 Security First
+
+Memora is designed with **memory hygiene by default**.
+
+### Never stored
+
+- 🚫 API keys
+- 🚫 Access tokens
+- 🚫 Passwords
+- 🚫 Raw credentials
+- 🚫 PII
+
+### Instead, reference by name
 
 ```bash
-python3 Pipeline/train.py
+$DATABASE_URL
+$OPENAI_API_KEY
+$JWT_SECRET
 ```
 
-**Выходные файлы:**
-```
-Train/
-├── checkpoints/<exp>/
-│   └── best_model.pt                    # Лучший чекпойнт
-└── results/<exp>/
-    ├── metrics.json                     # Финальные метрики
-    ├── history.json                     # История обучения
-    ├── config_run.json                  # Конфигурация запуска
-    └── val_preds.npz                    # Предсказания валидации
-```
+### Built-in safeguards
 
-### 📊 Полная 5×5 оценка
-
-```bash
-# Полный cross-validation (5 фолдов × 5 субъектов)
-python3 Pipeline/run_full_evaluation.py
-```
-
-Выведет:
-- Метрики по каждому фолду и субъекту
-- Статистику с доверительными интервалами
-- Confusion matrices
-
-### 🤖 Классический ML baseline
-
-```bash
-# Обучение моделей SVM/RF/LogReg на инженерных признаках
-python3 Pipeline/train_classical_ml.py
-```
-
-### 📈 Сохранение attention карт
-
-```bash
-# Визуализация внимания трансформера
-python3 Pipeline/train.py --save-attn
-```
+- `.claudeignore` blocks sensitive files
+- `audit` skill scans for credential patterns
+- `CONSTITUTION.md` governs what can be recorded
 
 ---
 
-## ⚙️ Конфигурация
+## 🎓 Why This Works
 
-**Основной файл:** `Pipeline/config.py` → функция `default_config()`
+### Predictability
+Every knowledge class has an owner and clear read path
 
-<details>
-<summary><b>📂 Параметры данных</b></summary>
+### Scalability
+Handles growth in sessions, decisions, subsystems, and agents
 
-| Параметр | Значение | Описание |
-|----------|----------|---------|
-| `data_dir` | `/mnt/data/derivatives/preprocessed_pkl` | Путь к предобработанным данным |
-| `subject_ids` | `[1-5]` | ID субъектов для обучения |
-| `task` | `'imagine'` | Тип задачи (воображаемая речь) |
-| `normalize` | `'zscore_hybrid'` | Subject-centering + global std |
-| `exclude_channels` | `[124]` | Исключить артефактные каналы |
+### Compatibility
+Same knowledge architecture works across AI toolchains
 
-</details>
+### Observability
+`CURRENT.md`, `HANDOFF.md`, `SESSIONS/`, `DECISIONS.md` form an audit trail
 
-<details>
-<summary><b>🧠 Параметры модели</b></summary>
-
-| Параметр | Значение | Описание |
-|----------|----------|---------|
-| `proj_channels` | 24 | Количество выходных каналов после projection |
-| **Малое окно** | 128 / 96 | Размер окна / Шаг (ms) |
-| **Большое окно** | 256 / 128 | Размер окна / Шаг (ms) |
-| `d_model` | 128 | Размер embedding'а |
-| `n_layers` | 2 | Количество слоев Transformer |
-| `n_heads` | 4 | Количество attention heads |
-| `cov_type` | `'corr'` | Тип ковариационной матрицы |
-| `use_subject_embed` | `True` | Использовать subject embeddings |
-| `subject_embed_dim` | 16 | Размер subject embedding |
-
-</details>
-
-<details>
-<summary><b>🎯 Параметры обучения</b></summary>
-
-| Параметр | GPU | CPU | Описание |
-|----------|-----|-----|---------|
-| `batch_size` | 16 | 8 | Размер батча |
-| `lr` | 3e-4 | 3e-4 | Learning rate (AdamW) |
-| `weight_decay` | 1e-4 | 1e-4 | L2 регуляризация |
-| `early_stopping_patience` | 8 | 8 | Эпох без улучшения |
-| `use_amp` | ✅ | ❌ | Automatic Mixed Precision |
-| `grad_clip` | 1.0 | 1.0 | Gradient clipping |
-| `num_workers` | 4 | 0 | Data loader workers |
-
-</details>
-
-<details>
-<summary><b>🔥 Параметры loss & optimizer</b></summary>
-
-| Параметр | Значение | Описание |
-|----------|----------|---------|
-| **Loss** | Focal (β=0.999, γ=1.75) | Class-Balanced Focal Loss |
-| **Optimizer** | AdamW | С отдельным weight decay для embeddings |
-| **Scheduler** | Cosine + Warmup | Линейный warmup → косинусный decay |
-
-</details>
+### Context hygiene
+Memora reduces noise and prevents instruction dilution
 
 ---
 
-## 🏗️ Архитектура
+## 📚 Documentation
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    EEG Input [B, 125, T]                    │
-│                                                             │
-│                    ↓ Channel Projection ↓                   │
-│                        → 24 channels                        │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-        ┌────────────────┼────────────────┐
-        │                │                │
-     ┌──▼──┐         ┌──▼──┐        ┌───▼────┐
-     │Small│         │Large│        │Scale   │
-     │128/96│        │256/128│      │Embedding│
-     └──┬──┘         └──┬──┘        └───┬────┘
-        │                │                │
-    ┌───▼────────────────▼────────────────▼──┐
-    │  SPD Covariance (OAS) → Correlation    │
-    │  ↓ Riemannian Log-Euclidean Map        │
-    │  ↓ Vectorization                       │
-    │          → Tokens                      │
-    └───┬─────────────────────────────────────┘
-        │
-    ┌───▼──────────────────────────────────────────┐
-    │  + Positional Encoding + Scale Embeddings   │
-    │  ↓ Transformer Encoder (2 layers, 4 heads)  │
-    │  ↓ Attention-Pooling + CLS Token            │
-    │          → Global Representation            │
-    └───┬──────────────────────────────────────────┘
-        │
-    ┌───▼────────────────────────────────────┐
-    │  + Subject Embedding (dim=16)          │
-    │  ↓ Classification Head                 │
-    │          → 8 Meta-Classes              │
-    └────────────────────────────────────────┘
-```
-
-### 🔑 Ключевые компоненты
-
-| Компонент | Функция | Особенность |
-|-----------|---------|-------------|
-| **SPD Tokens** | Представление сигнала | Риманова геометрия, устойчивость |
-| **Multi-Scale** | Многоуровневый анализ | 128/96 + 256/128 ms окна |
-| **Transformer** | Контекстное обучение | 2 слоя × 4 heads |
-| **Attention Pool** | Агрегация токенов | Адаптивные веса |
-| **Subject Embed** | Персонализация | Отдельный weight decay |
+- **[MANIFESTO.md](./MANIFESTO.md)** — Open standard for agent markdown instructions
+- **[AGENTS.md](./AGENTS.md)** — Bootstrap and operating rules
+- **[memory-bank/INDEX.md](./memory-bank/INDEX.md)** — Routing guide
+- **[memory-bank/LIFECYCLE.md](./memory-bank/LIFECYCLE.md)** — Memory operations flow
 
 ---
 
-## 📊 Бенчмарки
+## 🗺️ Roadmap
 
-### Результаты на базовой конфигурации
-
-```
-┌─────────────────────────────────────────────────────────┐
-│         Полная серия: 5 субъектов × 5 фолдов            │
-│                (25 успешных запусков)                   │
-├─────────────────────────────────────────────────────────┤
-│ Метрика              │ Значение      │ Доверие (95%)    │
-├──────────────────────┼───────────────┼──────────────────┤
-│ F1-macro             │ 0.265 ± 0.011 │ [0.261; 0.269]   │
-│ Accuracy             │ 0.288 ± 0.013 │ [0.283; 0.293]   │
-│ Balanced Accuracy    │ 0.285 ± 0.014 │ [0.280; 0.290]   │
-│ Loss (val)           │ 1.376 ± 0.049 │ [1.371; 1.381]   │
-└──────────────────────┴───────────────┴──────────────────┘
-```
-
-### Сравнение с baseline
-
-| Модель | Accuracy | Примечание |
-|--------|----------|-----------|
-| 🎲 **Random Chance** | **0.125** | 8 классов (1/8) |
-| 🎯 **Наша модель** | **0.288** | ↑ 2.3x выше random |
-
-### Per-Subject (Fold-1)
-
-| Субъект | F1-macro | Accuracy | BA |
-|---------|----------|----------|-----|
-| sub-01 | 0.278 ± 0.005 | 0.303 ± 0.007 | 0.299 |
-| sub-02 | 0.279 ± 0.008 | 0.298 ± 0.010 | 0.294 |
-| sub-03 | 0.265 ± 0.010 | 0.290 ± 0.013 | 0.285 |
-| sub-04 | 0.263 ± 0.015 | 0.293 ± 0.018 | 0.288 |
-| **Avg** | **0.276 ± 0.009** | **0.299 ± 0.012** | **0.291** |
+- [ ] Monorepo and multi-service templates
+- [ ] Starter packs (TypeScript, Python, Go, Rust)
+- [ ] Auto-generator from existing codebases
+- [ ] CI checks for temporal freshness and drift
+- [ ] Visual dashboard for memory health
 
 ---
 
-## 📂 Структура проекта
+## 📄 License
 
-```
-EEG_to_Text/
-│
-├── 📜 README.md                          # Этот файл
-├── 📄 COPYRIGHT.md                       # Лицензия
-├── 📋 requirements.txt                   # Зависимости
-│
-├── Pipeline/                             # ⭐ ОСНОВНОЙ КОД
-│   ├── config.py                         # Конфигурация
-│   ├── data_loader.py                    # Загрузчик данных
-│   ├── model.py                          # RTTMultiScale модель
-│   ├── riemannian_utils.py               # SPD операции
-│   ├── trainer.py                        # Логика обучения
-│   ├── train.py                          # Основной скрипт обучения
-│   ├── run_full_evaluation.py            # 5×5 cross-validation
-│   ├── feature_engineering.py            # Инженерные признаки
-│   ├── train_classical_ml.py             # ML baseline
-│   └── test_dryrun.py                    # Быстрая проверка
-│
-├── json/                                 # 📖 СЛОВАРИ
-│   ├── classnumber.json                  # 39 классов
-│   ├── textmaps.json                     # Описания
-│   └── metaclasses.json                  # 39→8 мэппинг
-│
-├── Train/                                # 📊 РЕЗУЛЬТАТЫ
-│   ├── checkpoints/
-│   │   └── <exp_id>/
-│   │       └── best_model.pt
-│   └── results/
-│       └── <exp_id>/
-│           ├── metrics.json
-│           ├── history.json
-│           ├── config_run.json
-│           └── val_preds.npz
-│
-├── analysis_tools/                       # 🔬 АНАЛИЗ
-│   ├── confusion_matrix_plotter.py
-│   ├── pr_roc_analyzer.py
-│   ├── training_curves.py
-│   ├── ablation_study.py
-│   └── subject_effects_analysis.py
-│
-└── derivatives/                          # 💾 ЛОКАЛЬНЫЕ ДАННЫЕ
-    └── preprocessed_pkl/                 # (опционально)
-        └── <subject>/eeg/
-```
-
----
-
-## 🗺️ Дорожная карта
-
-### Phase 1
-- ✅ Многомасштабная Transformer архитектура
-- ✅ Subject embeddings + гибридная нормализация
-- ✅ Полная 5×5 оценка с доверительными интервалами
-- ✅ Сохранение артефактов и confusion matrices
-
-### Phase 2 (Планируется)
-- ⬜ Subject-aware переносимость (LOSO / StratifiedGroupKFold)
-- ⬜ Температурная калибровка (ECE/NLL/Brier score)
-- ⬜ Системные абляции (subject_embed, cov_type, окна)
-- ⬜ Визуализация attention карт
-- ⬜ Анализ важности каналов (gradients, SHAP)
-
-### Phase 3 (Дальний горизонт)
-- ⬜ Online обучение и адаптация к новым субъектам
-- ⬜ Ансамблевые методы
-- ⬜ Дистилляция и оптимизация для deployment
-
----
-
-## 🤝 Вклад
-
-Мы приветствуем вклад в проект! 
-
-### Как помочь:
-1. **Баг-фиксы:** Откройте Issue с описанием
-2. **Улучшения:** Fork → Branch → Commit → PR
-3. **Документация:** Уточнения и примеры всегда приветствуются
-4. **Абляции:** Результаты новых конфигураций интересны
-
-### Требования к PR:
-- ✅ Следуйте стилю проекта (PEP 8)
-- ✅ Добавьте минимальные тесты
-- ✅ Обновите документацию
-- ✅ Опишите изменения в описании PR
-
----
-
-## 📜 Лицензия
-
-Этот проект распределяется под **собственной лицензией**. См. [`COPYRIGHT.md`](./COPYRIGHT.md) для полных условий использования.
-
-> ⚠️ **Ограничение:** Коммерческое использование требует письменного согласия автора.
-
----
-
-## 📚 Цитирование
-
-Если вы используете этот проект в исследованиях, пожалуйста, цитируйте:
-
-```bibtex
-@software{Verbetskiy_EEG_to_Text_Phase4B_2026,
-  author      = {Вербецкий, Эдуард Игоревич},
-  title       = {EEG\_to\_Text: Imagined-Speech EEG Decoder (Phase 4B)},
-  year        = {2026},
-  institution = {МАИ (НИУ)},
-  url         = {https://github.com/<org>/EEG_to_Text}
-}
-```
-
----
-
-## 📞 Контакты
-
-- 👨‍💼 **Автор:** Эдуард Вербецкий
-- 📧 **Email:** [verbasik@gmail.com](mailto:verbasik@gmail.com)
-- 🏛️ **Учреждение:** МАИ (НИУ)
-- 📍 **Проект:** Imagined Speech Decoding
+MIT — Use freely. See [LICENSE](./LICENSE) for details.
 
 ---
 
 <div align="center">
 
-### ⭐ Если проект вам нравится, поставьте звезду на GitHub!
+**Memora** — Made with love in Russia ❤️ 
 
-**Made with ❤️ for Brain-Computer Interface research**
-
-*Последнее обновление: Март 2026*
+[Star on GitHub](https://github.com/) · [Read Manifesto](./MANIFESTO.md) · [Quick Start](#-quick-start)
 
 </div>
