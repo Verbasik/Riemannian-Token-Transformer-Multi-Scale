@@ -56,6 +56,8 @@ max_lines: 80
 | 1 | Visualization: matplotlib Agg backend + seaborn optional | ✅ Действует | 2026-03-14 | ADR-001 | Publication-quality plots, headless-safe |
 | 2 | Full K-fold (5s × 5f) + Wilcoxon + Bootstrap CI | ✅ Действует | 2026-03-14 | — | Statistical rigor for PhD thesis |
 | 3 | Per-class + per-subject + per-fold metrics logging | ✅ Действует | 2026-03-14 | — | Fine-grained analysis for paper |
+| 4 | Scientific paper integration: all 7 graphics + section restructuring | ✅ Действует | 2026-03-14 | — | Final thesis preparation (sections 10.7, 11.1–11.4, 11.7, 12.3) |
+| 5 | Advisor feedback clarifications: data source + features + labeling + training strategy | ✅ Действует | 2026-03-14 | — | Thesis readiness; SI+embeddings strategy confirmed (7 edits, 360 lines) |
 
 ## Promotion rules
 
