@@ -35,7 +35,10 @@ from utils import _ensure_numpy_pickle_compat
 # =============================================================================
 
 
-def create_subject_mapping(samples: List[Dict]) -> Dict[str, int]:
+def create_subject_mapping(
+    samples: List[Dict],
+    indices: Optional[np.ndarray] = None
+) -> Dict[str, int]:
     """
     Description:
     ---------------
@@ -46,6 +49,7 @@ def create_subject_mapping(samples: List[Dict]) -> Dict[str, int]:
     Args:
     ---------------
         samples: Список всех образцов данных (словари с ключом 'subject').
+        indices: Опциональные индексы подмножества для построения mapping.
 
     Returns:
     ---------------
@@ -61,7 +65,10 @@ def create_subject_mapping(samples: List[Dict]) -> Dict[str, int]:
         >>> create_subject_mapping(samples)
         {'S1': 0, 'S2': 1}
     """
-    unique_subjects = sorted(set(s['subject'] for s in samples))
+    if indices is None:
+        unique_subjects = sorted(set(s['subject'] for s in samples))
+    else:
+        unique_subjects = sorted(set(samples[int(i)]['subject'] for i in indices))
     return {subject_id: idx for idx, subject_id in enumerate(unique_subjects)}
 
 
@@ -113,6 +120,7 @@ class ChiscoDataset(Dataset):
         norm_stats: Optional[Dict[str, np.ndarray]] = None,
         exclude_channels: Optional[List[int]] = None,
         subject_mapping: Optional[Dict[str, int]] = None,
+        unknown_subject_index: int = -1,
     ):
         self.samples = samples
         self.transform = transform
@@ -122,6 +130,7 @@ class ChiscoDataset(Dataset):
         # Инициализация пустым списком, если None, для упрощения логики
         self.exclude_channels = exclude_channels if exclude_channels else []
         self.subject_mapping = subject_mapping if subject_mapping else {}
+        self.unknown_subject_index = unknown_subject_index
 
     def __len__(self) -> int:
         """
@@ -245,8 +254,12 @@ class ChiscoDataset(Dataset):
 
         # Конвертация subject_id в integer для embedding слоя
         subject_id = sample['subject']
-        # Default to 0 if not found to prevent crashes on unseen subjects
-        subject_id_int = self.subject_mapping.get(subject_id, 0)
+        # Unknown subjects are explicit. The model decides whether to reject
+        # them or replace their embedding by a configured fallback.
+        subject_id_int = self.subject_mapping.get(
+            subject_id,
+            self.unknown_subject_index
+        )
 
         return {
             'eeg': eeg_tensor,
@@ -402,8 +415,17 @@ def load_all_data(
             # Парсинг ID запуска из имени файла
             run_id = pkl_file.stem.split("_run-")[1].split("_")[0]
             _ensure_numpy_pickle_compat()
-            with open(pkl_file, "rb") as f:
-                data_list = pickle.load(f)
+            try:
+                with open(pkl_file, "rb") as f:
+                    data_list = pickle.load(f)
+            except (OSError, EOFError, pickle.UnpicklingError) as exc:
+                if verbose:
+                    print(
+                        f"⚠️  {subject_id}: не удалось прочитать "
+                        f"{pkl_file.name}: {type(exc).__name__}: {exc}. "
+                        "Файл пропущен."
+                    )
+                continue
             for item in data_list:
                 text, eeg = item['text'], item['input_features']
                 label = text_to_class.get(text, -1)
@@ -544,6 +566,81 @@ def get_stratified_cv_splits(
         random_state=random_state
     )
     return list(skf.split(np.zeros(len(labels)), labels))
+
+
+def get_within_subject_cv_splits(
+    samples: List[Dict],
+    labels: np.ndarray,
+    n_splits: int,
+    random_state: int
+) -> List[Tuple[np.ndarray, np.ndarray]]:
+    """
+    Description:
+    ---------------
+        Создает within-subject K-Fold разрезы: каждый субъект отдельно
+        разбивается StratifiedKFold, затем fold-и объединяются по субъектам.
+        Это гарантирует, что каждый субъект присутствует и в train, и в val,
+        а обучаемые subject embeddings имеют train-наблюдения перед валидацией.
+
+    Args:
+    ---------------
+        samples: Список всех образцов данных.
+        labels: Массив меток классов.
+        n_splits: Количество fold-ов.
+        random_state: Seed для воспроизводимости.
+
+    Returns:
+    ---------------
+        List[Tuple]: Список кортежей (train_idx, val_idx).
+
+    Raises:
+    ---------------
+        ValueError: Если у субъекта недостаточно данных для stratified split.
+    """
+    subject_to_indices: Dict[str, List[int]] = {}
+    for idx, sample in enumerate(samples):
+        subject_id = sample['subject']
+        if subject_id not in subject_to_indices:
+            subject_to_indices[subject_id] = []
+        subject_to_indices[subject_id].append(idx)
+
+    combined: List[Tuple[List[int], List[int]]] = [
+        ([], []) for _ in range(n_splits)
+    ]
+
+    for subject_id, subject_indices_list in sorted(subject_to_indices.items()):
+        subject_indices = np.asarray(subject_indices_list, dtype=int)
+        subject_labels = labels[subject_indices]
+        _, class_counts = np.unique(subject_labels, return_counts=True)
+
+        if len(subject_indices) < n_splits or np.min(class_counts) < n_splits:
+            raise ValueError(
+                f"Subject '{subject_id}' не поддерживает within_subject "
+                f"StratifiedKFold: n_samples={len(subject_indices)}, "
+                f"min_class_count={int(np.min(class_counts))}, "
+                f"n_splits={n_splits}."
+            )
+
+        skf = StratifiedKFold(
+            n_splits=n_splits,
+            shuffle=True,
+            random_state=random_state
+        )
+
+        for fold_idx, (local_train, local_val) in enumerate(
+            skf.split(np.zeros(len(subject_labels)), subject_labels)
+        ):
+            train_acc, val_acc = combined[fold_idx]
+            train_acc.extend(subject_indices[local_train].tolist())
+            val_acc.extend(subject_indices[local_val].tolist())
+
+    return [
+        (
+            np.asarray(train_idx, dtype=int),
+            np.asarray(val_idx, dtype=int)
+        )
+        for train_idx, val_idx in combined
+    ]
 
 
 def get_stratified_group_cv_splits(

@@ -67,6 +67,7 @@ def _resolve_preprocessed_dir() -> Path:
 
     candidates.extend(
         [
+            Path("/mnt/data/data/derivatives/preprocessed_pkl"),
             Path("/mnt/data/derivatives/preprocessed_pkl"),
             Path("/mnt/data/EEG/preprocessed_pkl"),
             PROJECT_ROOT / "derivatives" / "preprocessed_pkl",
@@ -109,8 +110,10 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
             "data_dir": data_dir,
             # Путь к preprocessed данным
 
-            "subject_ids": ["sub-03"],
-            # Список идентификаторов субъектов для обучения
+            "subject_ids": [
+                "sub-01", "sub-02", "sub-03", "sub-04", "sub-05"
+            ],
+            # Список идентификаторов субъектов для обучения/оценки
 
             "task": "imagine",
             # Тип задачи (например: imagine / overt / rest)
@@ -178,6 +181,10 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
 
             "subject_embed_dropout": 0.2,
             # Dropout для subject embedding
+
+            "unknown_subject_policy": "auto",
+            # Поведение для subject-held-out validation:
+            # auto / error / zero / mean
         },
         "training": {
             "n_epochs": 50,
@@ -201,31 +208,57 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
             "grad_clip": 1.0,
             # Ограничение нормы градиента
 
-            "num_workers": 4 if device == "cuda" else 0,
-            # Количество потоков DataLoader
+            "num_workers": 0,
+            # Количество worker-процессов DataLoader.
+            # Данные уже загружены в память; на Python 3.14 forkserver
+            # пытается pickle-ить большой dataset и может падать.
 
             "pin_memory": device == "cuda",
             # Закреплять ли память (ускоряет передачу на GPU)
 
-            "persistent_workers": device == "cuda",
+            "persistent_workers": False,
             # Сохранять worker-процессы между эпохами
 
             "prefetch_factor": 4 if device == "cuda" else 2,
             # Количество предварительно загружаемых батчей
+
+            "allow_multiprocessing_dataloader": False,
+            # Разрешить num_workers > 0. Для Python 3.14 по умолчанию
+            # выключено из-за forkserver + большого in-memory dataset.
         },
         "cv": {
+            "protocol": "within_subject",
+            # Протокол оценки:
+            # within_subject: каждый субъект есть в train и val
+            # subject_heldout: val-субъекты полностью отсутствуют в train
+
             "n_splits": 5,
             # Количество фолдов в кросс-валидации
 
             "random_state": RANDOM_SEED,
             # Seed для разбиения на фолды
 
-            "mode": "stratified_group",
+            "mode": "within_subject",
             # Режим CV:
-            # stratified / stratified_group / loso
+            # within_subject / stratified / stratified_group / loso
 
             "fold_index": 0,
             # Индекс конкретного фолда
+        },
+        "evaluation": {
+            "pipeline": "both",
+            # Полный evaluation pipeline:
+            # si: Subject-Independent pooled personalized model
+            # sd: Subject-Dependent per-subject models
+            # both: последовательно запустить si и sd
+
+            "si_use_subject_embed": True,
+            # SI использует одну общую модель и subject embeddings.
+
+            "sd_use_subject_embed": False,
+            # SD обучает отдельную модель на каждого субъекта; embedding
+            # субъекта по умолчанию отключен, т.к. персонализация задается
+            # самой отдельной моделью.
         },
         "optimizer": {
             "name": "adamw",

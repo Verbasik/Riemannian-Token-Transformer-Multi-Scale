@@ -17,6 +17,7 @@
 # Standard Libraries
 # =============================================================================
 import argparse
+import sys
 from typing import Any, Dict, List, Optional, Tuple
 
 # =============================================================================
@@ -40,6 +41,7 @@ from data_loader import (
     create_subject_mapping,
     get_stratified_cv_splits,
     get_stratified_group_cv_splits,
+    get_within_subject_cv_splits,
     get_loso_splits,
     load_all_data_metaclass,
 )
@@ -56,6 +58,89 @@ from utils import pretty_print_run, print_metrics, set_seed
 # Builders (Компоненты сборки пайплайна)
 # =============================================================================
 
+def _subjects_for_indices(
+    samples: List[Dict[str, Any]],
+    indices: np.ndarray
+) -> set:
+    """Возвращает множество subject IDs для заданных индексов."""
+    return {samples[int(idx)]['subject'] for idx in indices}
+
+
+def _resolve_cv_protocol(cfg: Dict[str, Any]) -> Tuple[str, str]:
+    """
+    Description:
+    ---------------
+        Нормализует пару (protocol, mode) и валидирует методологический
+        смысл выбранной оценки.
+
+    Returns:
+    ---------------
+        Tuple[str, str]: (protocol, mode).
+    """
+    cv_cfg = cfg.setdefault('cv', {})
+    mode = cv_cfg.get('mode', 'within_subject')
+    protocol = cv_cfg.get('protocol')
+
+    if protocol is None:
+        if mode in ('within_subject', 'stratified'):
+            protocol = 'within_subject'
+        elif mode in ('stratified_group', 'loso'):
+            protocol = 'subject_heldout'
+        else:
+            raise ValueError(f"Unknown CV mode: {mode}.")
+        cv_cfg['protocol'] = protocol
+
+    allowed_modes = {
+        'within_subject': {'within_subject', 'stratified'},
+        'subject_heldout': {'stratified_group', 'loso'},
+    }
+
+    if protocol not in allowed_modes:
+        raise ValueError(
+            f"Unknown CV protocol: {protocol}. Expected one of "
+            f"{sorted(allowed_modes)}."
+        )
+    if mode not in allowed_modes[protocol]:
+        raise ValueError(
+            f"CV mode '{mode}' is incompatible with protocol '{protocol}'. "
+            f"Allowed modes: {sorted(allowed_modes[protocol])}."
+        )
+
+    return protocol, mode
+
+
+def _resolve_unknown_subject_policy(
+    cfg: Dict[str, Any],
+    protocol: str
+) -> str:
+    """
+    Description:
+    ---------------
+        Преобразует policy='auto' в явное поведение:
+        - within_subject: error, потому что unseen subject является ошибкой.
+        - subject_heldout: zero, потому что val subject отсутствует в train.
+
+    Returns:
+    ---------------
+        str: Разрешенная policy ('error', 'zero' или 'mean').
+    """
+    model_cfg = cfg.setdefault('model', {})
+    policy = model_cfg.get('unknown_subject_policy', 'auto')
+
+    if policy == 'auto':
+        policy = 'error' if protocol == 'within_subject' else 'zero'
+
+    allowed = {'error', 'zero', 'mean'}
+    if policy not in allowed:
+        raise ValueError(
+            f"Unknown subject policy '{policy}'. Expected one of "
+            f"{sorted(allowed)} or 'auto'."
+        )
+
+    model_cfg['unknown_subject_policy_resolved'] = policy
+    return policy
+
+
 def build_loaders(
     cfg: Dict[str, Any]
 ) -> Tuple[DataLoader, DataLoader, np.ndarray, int, int]:
@@ -64,7 +149,9 @@ def build_loaders(
     ---------------
         Создает DataLoaders для обучения и валидации с учетом выбранной
         стратегии кросс-валидации и нормализации.
-        Поддерживает режимы: Stratified, StratifiedGroup (рекомендуется), LOSO.
+        Поддерживает протоколы:
+        - within_subject: субъект присутствует и в train, и в val.
+        - subject_heldout: val-субъекты полностью отсутствуют в train.
         Вычисляет статистику нормализации только на train-части (preventing leakage).
 
     Args:
@@ -78,7 +165,7 @@ def build_loaders(
             - val_loader: DataLoader для валидационной выборки.
             - train_labels: Метки обучающей выборки (для взвешивания потерь).
             - effective_channels: Количество каналов после исключения.
-            - n_subjects: Общее количество уникальных субъектов.
+            - n_subjects: Количество train-субъектов в embedding table.
 
     Raises:
     ---------------
@@ -98,84 +185,72 @@ def build_loaders(
         task=cfg['data']['task'],
     )
 
-    # Создание маппинга субъектов для эмбеддингов и группировки
-    subject_mapping = create_subject_mapping(samples)
-    n_subjects = len(subject_mapping)
-
-    # Инициализация основного датасета
-    dataset = ChiscoDataset(
-        samples=samples,
-        normalize=cfg['data']['normalize'],
-        exclude_channels=cfg['data'].get('exclude_channels'),
-        subject_mapping=subject_mapping
-    )
     labels = np.array([s['label'] for s in samples])
+    subject_mapping_all = create_subject_mapping(samples)
 
     # =========================================================================
     # Выбор стратегии кросс-валидации (Subject-Aware CV)
     # =========================================================================
-    cv_mode = cfg['cv'].get('mode', 'stratified_group')
+    cv_protocol, cv_mode = _resolve_cv_protocol(cfg)
     splits: List[Tuple[np.ndarray, np.ndarray]] = []
 
-    if cv_mode == 'stratified':
-        # Оригинальный режим: StratifiedKFold без группировки по субъектам.
-        # ⚠️ ВНИМАНИЕ: перемешивает сэмплы одного субъекта между train и val,
-        # что может привести к завышенной оценке качества (data leakage).
-        splits = get_stratified_cv_splits(
-            labels,
-            cfg['cv']['n_splits'],
-            cfg['cv']['random_state']
-        )
-        print(
-            "⚠️  CV Mode: Stratified (перемешивает субъектов, "
-            "используется только для совместимости)"
-        )
-
-    elif cv_mode == 'stratified_group':
-        # Рекомендуемый режим: StratifiedGroupKFold.
-        # ✅ ГАРАНТИРУЕТ: субъекты не пересекаются между train и val.
-        groups = np.array([
-            subject_mapping[s['subject']] for s in samples
-        ])
-        n_unique_groups = np.unique(groups).size
-
-        if n_unique_groups < 2:
-            # Fallback для случая одного субъекта (SGKF требует >= 2 групп)
-            print(
-                "⚠️  CV Mode: Stratified Group недоступен для одного субъекта, "
-                "fallback -> Stratified"
+    if cv_protocol == 'within_subject':
+        if cv_mode == 'within_subject':
+            splits = get_within_subject_cv_splits(
+                samples,
+                labels,
+                cfg['cv']['n_splits'],
+                cfg['cv']['random_state']
             )
+            print(
+                "✅ CV Protocol: within_subject "
+                "(каждый субъект есть в train и val)"
+            )
+        else:
+            # Backward-compatible mixed-subject split. Это не LOSO:
+            # subject embeddings обучаются на train-части тех же субъектов.
             splits = get_stratified_cv_splits(
                 labels,
                 cfg['cv']['n_splits'],
                 cfg['cv']['random_state']
             )
-        else:
-            splits = get_stratified_group_cv_splits(
-                labels,
-                groups,
-                n_splits=cfg['cv']['n_splits'],
-                random_state=cfg['cv']['random_state']
-            )
             print(
-                "✅ CV Mode: Stratified Group (группировка по субъектам - "
-                "РЕКОМЕНДУЕТСЯ)"
+                "⚠️  CV Protocol: within_subject + stratified "
+                "(mixed-subject split)"
             )
 
-    elif cv_mode == 'loso':
-        # Максимально строгий режим: Leave-One-Subject-Out.
-        # 🔐 СТРОГИЙ: каждый субъект по очереди становится тестовым набором.
-        splits = get_loso_splits(samples, subject_mapping)
+    elif cv_mode == 'stratified_group':
+        groups = np.array([
+            subject_mapping_all[s['subject']] for s in samples
+        ])
+        n_unique_groups = np.unique(groups).size
+
+        if n_unique_groups < 2:
+            raise ValueError(
+                "subject_heldout protocol requires at least 2 subjects. "
+                f"Got {n_unique_groups}."
+            )
+
+        splits = get_stratified_group_cv_splits(
+            labels,
+            groups,
+            n_splits=cfg['cv']['n_splits'],
+            random_state=cfg['cv']['random_state']
+        )
         print(
-            f"🔐 CV Mode: LOSO (Leave-One-Subject-Out, "
+            "🔐 CV Protocol: subject_heldout + stratified_group "
+            "(val subjects absent from train)"
+        )
+
+    elif cv_mode == 'loso':
+        splits = get_loso_splits(samples, subject_mapping_all)
+        print(
+            f"🔐 CV Protocol: subject_heldout + LOSO "
             f"{len(splits)} разбиений)"
         )
 
     else:
-        raise ValueError(
-            f"Unknown CV mode: {cv_mode}. "
-            "Expected 'stratified', 'stratified_group', or 'loso'."
-        )
+        raise ValueError(f"Unknown CV mode: {cv_mode}.")
 
     # Выбор конкретного fold для текущего запуска
     fold_index = int(cfg.get('cv', {}).get('fold_index', 0))
@@ -195,11 +270,61 @@ def build_loaders(
         f"train={len(train_idx)}, val={len(val_idx)}"
     )
 
+    train_subjects = _subjects_for_indices(samples, train_idx)
+    val_subjects = _subjects_for_indices(samples, val_idx)
+    unknown_val_subjects = val_subjects - train_subjects
+    overlapping_subjects = train_subjects & val_subjects
+
+    if cv_protocol == 'within_subject':
+        if unknown_val_subjects:
+            raise ValueError(
+                "within_subject protocol requires every validation subject "
+                f"to appear in train. Missing: {sorted(unknown_val_subjects)}."
+            )
+    elif overlapping_subjects:
+        raise ValueError(
+            "subject_heldout protocol requires disjoint train/val subjects. "
+            f"Overlap: {sorted(overlapping_subjects)}."
+        )
+
+    unknown_policy = _resolve_unknown_subject_policy(cfg, cv_protocol)
+    use_subject_embed = cfg['model'].get('use_subject_embed', False)
+    if cv_protocol == 'subject_heldout' and use_subject_embed:
+        if unknown_policy == 'error':
+            raise ValueError(
+                "subject_heldout with subject embeddings requires an unknown "
+                "subject policy. Set model.unknown_subject_policy to 'zero' "
+                "or 'mean', or disable model.use_subject_embed."
+            )
+        print(
+            "   Unknown validation subjects use "
+            f"subject embedding policy: {unknown_policy}"
+        )
+
+    subject_mapping = create_subject_mapping(samples, train_idx)
+    n_subjects = len(subject_mapping)
+
+    # Mapping строится только по train, поэтому held-out subjects получают -1.
+    dataset = ChiscoDataset(
+        samples=samples,
+        normalize=cfg['data']['normalize'],
+        exclude_channels=cfg['data'].get('exclude_channels'),
+        subject_mapping=subject_mapping,
+        unknown_subject_index=-1
+    )
+
     # =========================================================================
     # Вычисление статистики нормализации (только на Train!)
     # =========================================================================
     norm_mode = cfg['data']['normalize']
     exclude_ch = cfg['data'].get('exclude_channels')
+
+    if cv_protocol == 'subject_heldout' and norm_mode == 'zscore_subject_channel':
+        raise ValueError(
+            "zscore_subject_channel is incompatible with subject_heldout: "
+            "held-out subjects have no train statistics. Use zscore_hybrid "
+            "or zscore_dataset_channel."
+        )
 
     if norm_mode == 'zscore_hybrid':
         # Гибридная нормализация: центрирование по субъекту, скейлинг глобальный
@@ -222,6 +347,19 @@ def build_loaders(
     # Конфигурация DataLoader
     # =========================================================================
     num_workers = int(cfg['training']['num_workers'])
+    if (
+        num_workers > 0 and
+        sys.version_info >= (3, 14) and
+        not cfg['training'].get('allow_multiprocessing_dataloader', False)
+    ):
+        print(
+            "⚠️  DataLoader multiprocessing отключён: Python 3.14 "
+            "использует forkserver, который pickle-ит большой in-memory "
+            "dataset и может падать с pickle data was truncated. "
+            "Set training.allow_multiprocessing_dataloader=True to override."
+        )
+        num_workers = 0
+
     loader_common: Dict[str, Any] = {
         'batch_size': cfg['training']['batch_size'],
         'num_workers': num_workers,
@@ -250,7 +388,7 @@ def build_loaders(
     )
 
     # Определение эффективного количества каналов
-    eeg_shape = dataset[0]['eeg'].shape
+    eeg_shape = dataset[int(train_idx[0])]['eeg'].shape
     effective_channels = eeg_shape[0]
 
     return train_loader, val_loader, labels[train_idx], effective_channels, n_subjects
@@ -282,6 +420,11 @@ def build_model(
         Нет явных исключений.
     """
     m = cfg['model']
+    unknown_subject_policy = m.get('unknown_subject_policy_resolved')
+    if unknown_subject_policy is None:
+        protocol, _ = _resolve_cv_protocol(cfg)
+        unknown_subject_policy = _resolve_unknown_subject_policy(cfg, protocol)
+
     return RTTMultiScale(
         n_channels=n_channels,
         n_classes=m['n_classes'],
@@ -302,7 +445,8 @@ def build_model(
         use_subject_embed=m.get('use_subject_embed', False),
         n_subjects=n_subjects,
         subject_embed_dim=m.get('subject_embed_dim', 16),
-        subject_embed_dropout=m.get('subject_embed_dropout', 0.0)
+        subject_embed_dropout=m.get('subject_embed_dropout', 0.0),
+        unknown_subject_policy=unknown_subject_policy
     )
 
 

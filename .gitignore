@@ -196,6 +196,24 @@ cython_debug/
 # Data derivatives
 derivatives/
 
+# Memora / agent-memory infrastructure (kept local, not tracked)
+AGENTS.md
+CLAUDE.md
+MANIFESTO.md
+init.sh
+package.json
+package-lock.json
+memory-bank/
+.claude/README.md
+.claude/agents/
+.claude/rules/
+.claude/settings.json
+.claude/skills/
+.claudeignore
+.codex/
+.qwen/
+.opencode/
+
 # Memory bank — локальные файлы сессий
 memory-bank/.local/
 .claude/memory/
