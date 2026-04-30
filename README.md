@@ -29,10 +29,10 @@
 
 ## 📑 Навигация
 
-| 🚀 Быстрый старт | 📚 Полная документация | 🔧 Конфигурация |
-|:---:|:---:|:---:|
-| [Установка](#-быстрый-старт) | [Использование](#-использование) | [Параметры](#-конфигурация) |
-| [Первый запуск](#проверка-1-эпоха) | [Архитектура](#-архитектура) | [Структура](#-структура-проекта) |
+| 🚀 Быстрый старт                     | 📚 Полная документация             | 🔧 Конфигурация                  |
+|:------------------------------------ |:---------------------------------- |:-------------------------------- |
+| [Установка](#-быстрый-старт)         | [Использование](#-использование)   | [Параметры](#-конфигурация)      |
+| [Первый запуск](#проверка-1-эпоха)   | [Архитектура](#-архитектура)       | [Структура](#-структура-проекта) |
 
 ---
 
@@ -177,51 +177,51 @@ python3 Pipeline/train.py --save-attn
 <details>
 <summary><b>📂 Параметры данных</b></summary>
 
-| Параметр | Значение | Описание |
-|----------|----------|---------|
-| `data_dir` | `$EEG_PREPROCESSED_DIR` или `/mnt/data/data/derivatives/preprocessed_pkl` | Путь к предобработанным данным |
-| `subject_ids` | `["sub-01", ..., "sub-05"]` | ID субъектов для обучения |
-| `task` | `'imagine'` | Тип задачи (воображаемая речь) |
-| `normalize` | `'zscore_hybrid'` | Subject-centering + global std |
-| `exclude_channels` | `[124]` | Исключить артефактные каналы |
+| Параметр               | Значение                                                                       | Описание                               |
+|:-----------------------|:-------------------------------------------------------------------------------|:---------------------------------------|
+| `data_dir`             | `$EEG_PREPROCESSED_DIR` или `/mnt/data/data/derivatives/preprocessed_pkl`      | Путь к предобработанным данным         |
+| `subject_ids`          | `["sub-01", ..., "sub-05"]`                                                    | ID субъектов для обучения              |
+| `task`                 | `'imagine'`                                                                    | Тип задачи (воображаемая речь)         |
+| `normalize`            | `'zscore_hybrid'`                                                              | Subject-centering + global std         |
+| `exclude_channels`     | `[124]`                                                                        | Исключить артефактные каналы           |
 
 </details>
 
 <details>
 <summary><b>🧠 Параметры модели</b></summary>
 
-| Параметр | Значение | Описание |
-|----------|----------|---------|
-| `n_classes` | 8 | Количество мета-классов |
-| `proj_channels` | 24 | Количество выходных каналов после projection |
-| **Малое окно** | 128 / 96 | Размер окна / шаг в samples |
-| **Большое окно** | 256 / 128 | Размер окна / шаг в samples |
-| `spd_vec_dim` | 300 | `24 * 25 / 2`, верхний треугольник SPD-матрицы |
-| `feature_proj` | `Linear(300, 128)` | Проекция SPD-вектора в пространство токенов |
-| `d_model` | 128 | Размер embedding'а |
-| `n_layers` | 2 | Количество слоев Transformer |
-| `n_heads` | 4 | Количество attention heads |
-| `attn_heads` | 1 | Количество голов attention pooling |
-| `cov_type` | `'corr'` | Тип ковариационной матрицы |
-| `use_subject_embed` | `True` | Использовать subject embeddings |
-| `subject_embed_dim` | 16 | Размер subject embedding |
-| `subject_embed_dropout` | 0.2 | Dropout для subject embedding |
-| SI classifier input | 272 | `CLS(128) + attention pooled(128) + subject embedding(16)` |
-| SD classifier input | 256 | `CLS(128) + attention pooled(128)` |
+| Параметр               | Значение             | Описание                                                            |
+|:-----------------------|:---------------------|:--------------------------------------------------------------------|
+| n_classes              | 8                    | Количество мета-классов                                             |
+| proj_channels          | 24                   | Количество выходных каналов после projection                        |
+| **Малое окно**         | 128 / 96             | Размер окна / шаг в samples                                         |
+| **Большое окно**       | 256 / 128            | Размер окна / шаг в samples                                         |
+| spd_vec_dim            | 300                  | `24 * 25 / 2`, верхний треугольник SPD-матрицы                      |
+| feature_proj           | `Linear(300, 128)`   | Проекция SPD-вектора в пространство токенов                         |
+| d_model                | 128                  | Размер embedding'а                                                  |
+| n_layers               | 2                    | Количество слоев Transformer                                        |
+| n_heads                | 4                    | Количество attention heads                                          |
+| attn_heads             | 1                    | Количество голов attention pooling                                  |
+| cov_type               | `'corr'`             | Тип ковариационной матрицы                                          |
+| use_subject_embed      | `True`               | Использовать subject embeddings                                     |
+| subject_embed_dim      | 16                   | Размер subject embedding                                            |
+| subject_embed_dropout  | 0.2                  | Dropout для subject embedding                                       |
+| SI classifier input    | 272                  | `CLS(128) + attention pooled(128) + subject embedding(16)`          |
+| SD classifier input    | 256                  | `CLS(128) + attention pooled(128)`                                  |
 
 </details>
 
 <details>
 <summary><b>🧪 Параметры оценки</b></summary>
 
-| Параметр | Значение | Описание |
-|----------|----------|---------|
-| `evaluation.pipeline` | `'both'` | Запустить SI, затем SD |
-| `evaluation.si_use_subject_embed` | `True` | SI использует subject embeddings |
-| `evaluation.sd_use_subject_embed` | `False` | SD обучает отдельную модель на субъекта |
-| `cv.protocol` | `'within_subject'` | Каждый субъект есть и в train, и в validation |
-| `cv.mode` | `'within_subject'` | Фолды строятся внутри каждого субъекта |
-| `model.unknown_subject_policy` | `'auto'` | `error` для within-subject, `zero` для subject-held-out |
+| Параметр                           | Значение             | Описание                                                                |
+|:-----------------------------------|:---------------------|:------------------------------------------------------------------------|
+| `evaluation.pipeline`              | `'both'`               | Запустить SI, затем SD                                                |
+| `evaluation.si_use_subject_embed`  | `True`                 | SI использует subject embeddings                                      |
+| `evaluation.sd_use_subject_embed`  | `False`                | SD обучает отдельную модель на субъекта                               |
+| `cv.protocol`                      | `'within_subject'`     | Каждый субъект есть и в train, и в validation                         |
+| `cv.mode`                          | `'within_subject'`     | Фолды строятся внутри каждого субъекта                                |
+| `model.unknown_subject_policy`     | `'auto'`               | `error` для within-subject, `zero` для subject-held-out               |
 
 Текущий SI baseline оценивает known-subject generalization. Он не является
 строгой проверкой переноса на полностью нового субъекта; для этого нужен
@@ -232,15 +232,15 @@ python3 Pipeline/train.py --save-attn
 <details>
 <summary><b>🎯 Параметры обучения</b></summary>
 
-| Параметр | GPU | CPU | Описание |
-|----------|-----|-----|---------|
-| `batch_size` | 16 | 8 | Размер батча |
-| `lr` | 3e-4 | 3e-4 | Learning rate (AdamW) |
-| `weight_decay` | 1e-4 | 1e-4 | L2 регуляризация |
-| `early_stopping_patience` | 8 | 8 | Эпох без улучшения |
-| `use_amp` | ✅ | ❌ | Automatic Mixed Precision |
-| `grad_clip` | 1.0 | 1.0 | Gradient clipping |
-| `num_workers` | 0 | 0 | DataLoader multiprocessing отключён по умолчанию |
+| Параметр                     | GPU  | CPU  | Описание                                         |
+|:-----------------------------|:-----|:-----|:-------------------------------------------------|
+| `batch_size`                 | 16   | 8    | Размер батча                                     |
+| `lr`                         | 3e-4 | 3e-4 | Learning rate (AdamW)                            |
+| `weight_decay`               | 1e-4 | 1e-4 | L2 регуляризация                                 |
+| `early_stopping_patience`    | 8    | 8    | Эпох без улучшения                               |
+| `use_amp`                    | ✅   | ❌   | Automatic Mixed Precision                        |
+| `grad_clip`                  | 1.0  | 1.0  | Gradient clipping                                |
+| `num_workers`                | 0    | 0    | DataLoader multiprocessing отключён по умолчанию |
 
 </details>
 
@@ -259,51 +259,17 @@ python3 Pipeline/train.py --save-attn
 
 ## 🏗️ Архитектура
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    EEG Input [B, 124, T]                    │
-│                                                             │
-│                    ↓ Channel Projection ↓                   │
-│                        → 24 channels                        │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-        ┌────────────────┼────────────────┐
-        │                │                │
-     ┌──▼──┐         ┌──▼──┐        ┌───▼────┐
-     │Small│         │Large│        │Scale   │
-     │128/96│        │256/128│      │Embedding│
-     └──┬──┘         └──┬──┘        └───┬────┘
-        │                │                │
-    ┌───▼────────────────▼────────────────▼──┐
-    │  SPD Covariance (OAS) → Correlation    │
-    │  ↓ Riemannian Log-Euclidean Map        │
-    │  ↓ Vectorization: 24×25/2 = 300       │
-    │  ↓ Linear(300, 128) → Tokens          │
-    └───┬─────────────────────────────────────┘
-        │
-    ┌───▼──────────────────────────────────────────┐
-    │  + Positional Encoding + Scale Embeddings   │
-    │  ↓ Transformer Encoder (2 layers, 4 heads)  │
-    │  ↓ Attention-Pooling + CLS Token            │
-    │          → Global Representation            │
-    └───┬──────────────────────────────────────────┘
-        │
-    ┌───▼────────────────────────────────────┐
-    │  + Subject Embedding (dim=16)          │
-    │  ↓ Classification Head                 │
-    │          → 8 Meta-Classes              │
-    └────────────────────────────────────────┘
-```
+![Архитектура](/EEG_TO_TEXT/assets/main.png)
 
 ### 🔑 Ключевые компоненты
 
-| Компонент | Функция | Особенность |
-|-----------|---------|-------------|
-| **SPD Tokens** | Представление сигнала | Риманова геометрия, устойчивость |
-| **Multi-Scale** | Многоуровневый анализ | 128/96 + 256/128 samples |
-| **Transformer** | Контекстное обучение | 2 слоя × 4 heads |
-| **Attention Pool** | Агрегация токенов | Адаптивные веса |
-| **Subject Embed** | Персонализация | Отдельный weight decay |
+| Компонент          | Функция                | Особенность                      |
+|--------------------|-----------------------|-----------------------------------|
+| **SPD Tokens**     | Представление сигнала | Риманова геометрия, устойчивость  |
+| **Multi-Scale**    | Многоуровневый анализ | 128/96 + 256/128 samples          |
+| **Transformer**    | Контекстное обучение  | 2 слоя × 4 heads                  |
+| **Attention Pool** | Агрегация токенов     | Адаптивные веса                   |
+| **Subject Embed**  | Персонализация        | Отдельный weight decay            |
 
 ---
 
@@ -332,16 +298,16 @@ python3 Pipeline/train.py --save-attn
 
 ### Сравнение со случайным уровнем
 
-| Модель | Accuracy | Примечание |
-|--------|----------|-----------|
-| 🎲 **Random Chance** | **0.125** | 8 классов (1/8) |
-| 🎯 **SI baseline** | **0.283** | ↑ 2.26x выше random |
-| 🎯 **SD baseline** | **0.285** | ↑ 2.28x выше random |
+| Модель               | Accuracy    | Примечание          |
+|----------------------|-------------|---------------------|
+| 🎲 **Random Chance** | **0.125**   | 8 классов (1/8)     |
+| 🎯 **SI baseline**   | **0.283**   | ↑ 2.26x выше random |
+| 🎯 **SD baseline**   | **0.285**   | ↑ 2.28x выше random |
 
 ### Per-subject SD F1-macro
 
-| Субъект | F1-macro | 95% CI |
-|---------|----------|--------|
+| Субъект| F1-macro      | 95% CI         |
+|--------|---------------|--------------- |
 | sub-01 | 0.257 ± 0.009 | [0.249; 0.264] |
 | sub-02 | 0.270 ± 0.011 | [0.261; 0.280] |
 | sub-03 | 0.270 ± 0.012 | [0.260; 0.280] |
