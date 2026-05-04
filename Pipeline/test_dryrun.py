@@ -40,7 +40,7 @@ from train import (
     build_criterion,
     build_optimizer_and_scheduler,
 )
-from trainer import evaluate
+from trainer import evaluate_with_outputs
 from utils import set_seed, pretty_print_run
 
 
@@ -162,7 +162,12 @@ def main() -> None:
     # Шаг 5: Валидация
     # =========================================================================
     print("\n[5/5] Оценка на валидации...")
-    val_metrics = evaluate(model, val_loader, device, criterion)
+    val_metrics, _, _ = evaluate_with_outputs(
+        model,
+        val_loader,
+        device,
+        criterion
+    )
 
     print(f"✅ Val Loss: {val_metrics['loss']:.4f}")
     print(f"✅ Val Accuracy: {val_metrics['accuracy']:.4f}")

@@ -4,13 +4,16 @@
 Full K-Fold Cross-Validation with Subject-Aware CV
 =================================================================
 
-Запускает полную 5-кратную кросс-валидацию на всех 5 субъектах
-(всего 25 экспериментов). Собирает метрики и проводит статистический
-анализ с доверительными интервалами.
+Запускает полную оценку по протоколу из `cfg['cv']['protocol']`.
+Поддерживаются два верхнеуровневых пайплайна:
+- SI: одна общая модель на всех субъектов с subject embeddings.
+- SD: отдельная модель для каждого субъекта.
+Собирает метрики и проводит статистический анализ с доверительными
+интервалами.
 
 Возможности:
-- ✅ Subject-Aware StratifiedGroupKFold (отсутствие утечки по субъектам)
-- ✅ Все 5 субъектов × 5 фолдов = 25 экспериментов
+- ✅ SI pooled personalized model: общая RTTMultiScale + subject embeddings
+- ✅ SD per-subject models: отдельная RTTMultiScale на каждого субъекта
 - ✅ Bootstrap 95% доверительные интервалы
 - ✅ Тест знаковых рангов Уилкоксона (Wilcoxon signed-rank)
 - ✅ Поправка Бенджамини-Хохберга на множественное тестирование (FDR)
@@ -23,18 +26,30 @@ Full K-Fold Cross-Validation with Subject-Aware CV
     Train/results/full_evaluation/
     ├── results_detailed.json
     ├── results_summary.json
-    └── statistical_analysis.txt
+    ├── statistical_analysis.json
+    ├── statistical_analysis.txt
+    ├── plots/
+    │   ├── cv_boxplot.png
+    │   ├── subject_fold_heatmap.png
+    │   ├── bootstrap_ci.png
+    │   └── overall_metrics_bar.png
+    └── tables/
+        ├── full_eval_summary.csv
+        ├── per_subject_metrics.csv
+        └── metrics_report.md
 """
 
 # =============================================================================
 # Standard Libraries
 # =============================================================================
+import argparse
 import json
 import sys
 import warnings
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # =============================================================================
 # Third-Party Libraries
@@ -61,24 +76,178 @@ SUBJECTS: List[str] = ['sub-01', 'sub-02', 'sub-03', 'sub-04', 'sub-05']
 N_FOLDS: int = 5
 RESULTS_DIR: Path = Path('Train/results/full_evaluation')
 
+PIPELINE_NAMES: Dict[str, str] = {
+    'si': 'Subject-Independent (SI): pooled personalized model',
+    'sd': 'Subject-Dependent (SD): per-subject model',
+}
+
+
+def _resolve_requested_pipelines(value: Any) -> List[str]:
+    """
+    Description:
+    ---------------
+        Нормализует cfg['evaluation']['pipeline'] в список пайплайнов.
+
+    Args:
+    ---------------
+        value: str | Sequence[str] - si / sd / both или список.
+
+    Returns:
+    ---------------
+        List[str]: Пайплайны в порядке запуска.
+    """
+    if value is None:
+        value = 'both'
+
+    if isinstance(value, str):
+        key = value.lower()
+        if key == 'both':
+            return ['si', 'sd']
+        requested = [key]
+    elif isinstance(value, Sequence):
+        requested = [str(item).lower() for item in value]
+    else:
+        raise ValueError(
+            "evaluation.pipeline must be 'si', 'sd', 'both' or a list."
+        )
+
+    unknown = [item for item in requested if item not in PIPELINE_NAMES]
+    if unknown:
+        raise ValueError(
+            f"Unknown evaluation pipeline(s): {unknown}. "
+            f"Expected one of {sorted(PIPELINE_NAMES)} or 'both'."
+        )
+
+    # Сохраняем порядок, но удаляем дубли.
+    unique: List[str] = []
+    for item in requested:
+        if item not in unique:
+            unique.append(item)
+    return unique
+
+
+def _experiment_slug(experiment_cfg: Dict[str, Any]) -> str:
+    """
+    Description:
+    ---------------
+        Возвращает стабильный slug для каталогов артефактов эксперимента.
+    """
+    pipeline = experiment_cfg['pipeline']
+    subject = str(experiment_cfg['subject']).replace('/', '_')
+    fold = int(experiment_cfg['fold_idx']) + 1
+    return f"{pipeline}_{subject}_fold{fold:02d}"
+
+
+def build_experiment_plan(base_cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Description:
+    ---------------
+        Строит план запуска двух сравниваемых пайплайнов:
+        - SI: одна общая RTTMultiScale на всех субъектах + subject embeddings.
+        - SD: отдельная RTTMultiScale на каждый subject_id.
+
+        Оба пайплайна используют within-subject CV внутри своей области данных,
+        чтобы subject embeddings в SI обучались только на train-samples
+        соответствующих субъектов, а SD оценивался на held-out samples того же
+        субъекта.
+
+    Args:
+    ---------------
+        base_cfg: Dict[str, Any] - Базовая конфигурация.
+
+    Returns:
+    ---------------
+        List[Dict[str, Any]]: Список экспериментов для run_full_evaluation().
+    """
+    subjects = list(base_cfg['data'].get('subject_ids', SUBJECTS))
+    cv_cfg = base_cfg.get('cv', {})
+    eval_cfg = base_cfg.get('evaluation', {})
+    n_folds = int(cv_cfg.get('n_splits', N_FOLDS))
+    requested_pipelines = _resolve_requested_pipelines(
+        eval_cfg.get('pipeline', 'both')
+    )
+
+    experiment_plan: List[Dict[str, Any]] = []
+
+    if 'si' in requested_pipelines:
+        for fold_idx in range(n_folds):
+            experiment_plan.append({
+                'pipeline': 'si',
+                'pipeline_name': PIPELINE_NAMES['si'],
+                'model_scope': 'pooled_personalized',
+                'subject': 'all_subjects',
+                'fold_idx': fold_idx,
+                'subject_ids': subjects,
+                'cv_protocol': 'within_subject',
+                'cv_mode': 'within_subject',
+                'use_subject_embed': bool(
+                    eval_cfg.get('si_use_subject_embed', True)
+                ),
+                'unknown_subject_policy': 'auto',
+            })
+
+    if 'sd' in requested_pipelines:
+        for subject_id in subjects:
+            for fold_idx in range(n_folds):
+                experiment_plan.append({
+                    'pipeline': 'sd',
+                    'pipeline_name': PIPELINE_NAMES['sd'],
+                    'model_scope': 'per_subject',
+                    'subject': subject_id,
+                    'fold_idx': fold_idx,
+                    'subject_ids': [subject_id],
+                    'cv_protocol': 'within_subject',
+                    'cv_mode': 'within_subject',
+                    'use_subject_embed': bool(
+                        eval_cfg.get('sd_use_subject_embed', False)
+                    ),
+                    'unknown_subject_policy': 'auto',
+                })
+
+    return experiment_plan
+
 
 # =============================================================================
 # Main Training Loop (Основной цикл обучения)
 # =============================================================================
 
-def run_full_evaluation() -> Dict[str, Any]:
+def parse_args() -> argparse.Namespace:
     """
     Description:
     ---------------
-        Запускает полную 5-кратную кросс-валидацию на всех субъектах.
-        Для каждого субъекта выполняется внутренний стратифицированный CV,
-        так как при одном субъекте группировка невозможна.
+        Парсит CLI аргументы для full evaluation.
+    """
+    parser = argparse.ArgumentParser(
+        description="Run SI/SD full evaluation for RTTMultiScale."
+    )
+    parser.add_argument(
+        '--pipeline',
+        choices=['si', 'sd', 'both'],
+        default=None,
+        help=(
+            "Evaluation pipeline: si (pooled personalized), "
+            "sd (per-subject), or both. Default comes from config."
+        )
+    )
+    return parser.parse_args()
+
+
+def run_full_evaluation(
+    pipeline_override: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Description:
+    ---------------
+        Запускает полную оценку согласно cfg['evaluation']['pipeline']:
+        - si: одна pooled personalized модель на всех субъектах.
+        - sd: отдельная модель на каждого субъекта.
+        - both: последовательно si и sd.
         Собирает метрики для последующего статистического анализа.
 
     Returns:
     ---------------
         Dict[str, Any]: Словарь с детальными результатами для каждой
-            комбинации субъект/фолд.
+            комбинации протокол/fold.
 
     Raises:
     ---------------
@@ -87,22 +256,38 @@ def run_full_evaluation() -> Dict[str, Any]:
     Examples:
     ---------------
         >>> results = run_full_evaluation()
-        >>> len(results['experiments'])
-        25
+        >>> len(results['experiments']) > 0
+        True
     """
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
     base_cfg = default_config()
+    if pipeline_override is not None:
+        base_cfg.setdefault('evaluation', {})
+        base_cfg['evaluation']['pipeline'] = pipeline_override
+
     data_dir = str(base_cfg['data']['data_dir'])
+
+    subjects = list(base_cfg['data'].get('subject_ids', SUBJECTS))
+    cv_cfg = base_cfg.get('cv', {})
+    n_folds = int(cv_cfg.get('n_splits', N_FOLDS))
+    experiment_plan = build_experiment_plan(base_cfg)
+    requested_pipelines = [
+        pipeline for pipeline in ['si', 'sd']
+        if any(exp['pipeline'] == pipeline for exp in experiment_plan)
+    ]
 
     results: Dict[str, Any] = {
         'metadata': {
             'timestamp': datetime.now().isoformat(),
-            'cv_mode': 'stratified_group',
-            'n_subjects': len(SUBJECTS),
-            'n_folds': N_FOLDS,
-            'n_experiments': len(SUBJECTS) * N_FOLDS,
-            'subjects': SUBJECTS,
+            'evaluation_pipeline': base_cfg.get(
+                'evaluation', {}
+            ).get('pipeline', 'both'),
+            'requested_pipelines': requested_pipelines,
+            'n_subjects': len(subjects),
+            'n_folds': n_folds,
+            'n_experiments': len(experiment_plan),
+            'subjects': subjects,
             'data_dir': data_dir,
         },
         'experiments': [],
@@ -110,72 +295,107 @@ def run_full_evaluation() -> Dict[str, Any]:
         'per_fold': {},
     }
 
-    total_experiments = len(SUBJECTS) * N_FOLDS
+    total_experiments = len(experiment_plan)
     completed = 0
 
     print("\n" + "=" * 100)
-    print("FULL K-FOLD CROSS-VALIDATION WITH SUBJECT-AWARE CV")
+    print("FULL EVALUATION")
     print("=" * 100)
     print(f"Configuration:")
-    print(f"  Subjects: {SUBJECTS}")
-    print(f"  Folds: {N_FOLDS}")
+    print(f"  Pipelines: {requested_pipelines}")
+    print(f"  Subjects: {subjects}")
+    print(f"  Folds: {n_folds}")
     print(f"  Total experiments: {total_experiments}")
-    print(f"  CV Mode: stratified_group (subject-aware)")
     print(f"  Data dir: {data_dir}")
     print("=" * 100 + "\n")
 
-    # Запуск каждой комбинации субъект × фолд
-    for subject_idx, subject_id in enumerate(SUBJECTS, 1):
+    for experiment_cfg in experiment_plan:
+        subject_id = experiment_cfg['subject']
         if subject_id not in results['per_subject']:
             results['per_subject'][subject_id] = []
 
-        for fold_idx in range(N_FOLDS):
-            completed += 1
-            progress = f"[{completed}/{total_experiments}]"
-            fold_num = fold_idx + 1
+        completed += 1
+        progress = f"[{completed}/{total_experiments}]"
+        fold_idx = int(experiment_cfg['fold_idx'])
+        fold_num = fold_idx + 1
 
-            print(f"\n{progress} Running {subject_id} × Fold {fold_num}/{N_FOLDS}...")
-            print("-" * 100)
+        pipeline = experiment_cfg['pipeline']
+        pipeline_name = experiment_cfg['pipeline_name']
+        print(f"\n{progress} Running {pipeline.upper()} × {subject_id} × "
+              f"Fold {fold_num}/{n_folds}...")
+        print(f"Pipeline: {pipeline_name}")
+        print("-" * 100)
 
-            try:
-                # Создание конфигурации для текущего эксперимента
-                cfg = default_config()
-                cfg['data']['subject_ids'] = [subject_id]
-                cfg['cv']['fold_index'] = fold_idx
+        try:
+            cfg = deepcopy(base_cfg)
+            cfg['data']['subject_ids'] = list(experiment_cfg['subject_ids'])
+            cfg['cv']['protocol'] = experiment_cfg['cv_protocol']
+            cfg['cv']['mode'] = experiment_cfg['cv_mode']
+            cfg['cv']['fold_index'] = fold_idx
+            cfg['model']['use_subject_embed'] = bool(
+                experiment_cfg['use_subject_embed']
+            )
+            cfg['model']['unknown_subject_policy'] = (
+                experiment_cfg['unknown_subject_policy']
+            )
+            cfg['evaluation']['pipeline'] = pipeline
+            cfg['evaluation']['model_scope'] = experiment_cfg['model_scope']
+            cfg['evaluation']['experiment_subject'] = subject_id
 
-                # Для прогона на одном субъекте (per-subject) SGKF неприменим,
-                # так как нельзя разделить группы. Используем обычный Stratified CV.
-                cfg['cv']['mode'] = 'stratified'
+            exp_slug = _experiment_slug(experiment_cfg)
+            cfg['checkpoint_dir'] = str(
+                Path(base_cfg['checkpoint_dir']) / exp_slug
+            )
+            cfg['results_dir'] = str(
+                Path(base_cfg['results_dir']) / exp_slug
+            )
 
-                # Обучение и получение метрик
-                metrics = train_main(cfg)
+            metrics = train_main(cfg)
 
-                # Сохранение результатов
-                experiment = {
-                    'subject': subject_id,
-                    'fold': fold_num,
-                    'metrics': metrics,
-                    'status': 'success'
-                }
-                results['experiments'].append(experiment)
-                results['per_subject'][subject_id].append(metrics)
+            experiment = {
+                'experiment_id': _experiment_slug(experiment_cfg),
+                'pipeline': pipeline,
+                'pipeline_name': pipeline_name,
+                'model_scope': experiment_cfg['model_scope'],
+                'subject': subject_id,
+                'fold': fold_num,
+                'subject_ids': list(experiment_cfg['subject_ids']),
+                'protocol': experiment_cfg['cv_protocol'],
+                'cv_mode': experiment_cfg['cv_mode'],
+                'use_subject_embed': bool(experiment_cfg['use_subject_embed']),
+                'metrics': metrics,
+                'status': 'success'
+            }
+            results['experiments'].append(experiment)
+            results['per_subject'][subject_id].append(metrics)
 
-                f1_val = metrics.get('f1_macro', 0.0)
-                acc_val = metrics.get('accuracy', 0.0)
-                print(f"✅ Completed {subject_id} Fold {fold_num}")
-                print(f"   F1-macro: {f1_val:.4f}")
-                print(f"   Accuracy: {acc_val:.4f}")
+            f1_val = metrics.get('f1_macro', 0.0)
+            acc_val = metrics.get('accuracy', 0.0)
+            print(f"✅ Completed {pipeline.upper()} {subject_id} Fold {fold_num}")
+            print(f"   F1-macro: {f1_val:.4f}")
+            print(f"   Accuracy: {acc_val:.4f}")
 
-            except Exception as e:
-                print(f"❌ Error in {subject_id} Fold {fold_num}: {str(e)}")
-                experiment = {
-                    'subject': subject_id,
-                    'fold': fold_num,
-                    'metrics': None,
-                    'status': 'failed',
-                    'error': str(e)
-                }
-                results['experiments'].append(experiment)
+        except Exception as e:
+            print(
+                f"❌ Error in {pipeline.upper()} {subject_id} "
+                f"Fold {fold_num}: {str(e)}"
+            )
+            experiment = {
+                'experiment_id': _experiment_slug(experiment_cfg),
+                'pipeline': pipeline,
+                'pipeline_name': pipeline_name,
+                'model_scope': experiment_cfg['model_scope'],
+                'subject': subject_id,
+                'fold': fold_num,
+                'subject_ids': list(experiment_cfg['subject_ids']),
+                'protocol': experiment_cfg['cv_protocol'],
+                'cv_mode': experiment_cfg['cv_mode'],
+                'use_subject_embed': bool(experiment_cfg['use_subject_embed']),
+                'metrics': None,
+                'status': 'failed',
+                'error': str(e)
+            }
+            results['experiments'].append(experiment)
 
     print("\n" + "=" * 100)
     print("✅ TRAINING PHASE COMPLETED")
@@ -219,8 +439,9 @@ def extract_metric_per_fold(
         Нет явных исключений.
     """
     metric_per_subject: Dict[str, np.ndarray] = {}
+    subjects = results.get('metadata', {}).get('subjects', SUBJECTS)
 
-    for subject_id in SUBJECTS:
+    for subject_id in subjects:
         values: List[float] = []
         for experiment in results['experiments']:
             if (experiment['subject'] == subject_id and
@@ -232,6 +453,45 @@ def extract_metric_per_fold(
             metric_per_subject[subject_id] = np.array(values)
 
     return metric_per_subject
+
+
+def extract_metric_per_pipeline(
+    results: Dict[str, Any],
+    metric_name: str = 'f1_macro'
+) -> Dict[str, np.ndarray]:
+    """
+    Description:
+    ---------------
+        Извлекает метрику отдельно для SI и SD пайплайнов.
+
+    Args:
+    ---------------
+        results: Dict[str, Any] - Результаты из run_full_evaluation().
+        metric_name: str - Имя метрики.
+
+    Returns:
+    ---------------
+        Dict[str, np.ndarray]: Словарь {pipeline -> array значений}.
+    """
+    values_by_pipeline: Dict[str, List[float]] = {}
+
+    for experiment in results['experiments']:
+        if experiment['status'] != 'success':
+            continue
+        metrics = experiment.get('metrics') or {}
+        if metric_name not in metrics:
+            continue
+
+        pipeline = experiment.get('pipeline', 'unknown')
+        values_by_pipeline.setdefault(pipeline, []).append(
+            float(metrics[metric_name])
+        )
+
+    return {
+        pipeline: np.asarray(values, dtype=float)
+        for pipeline, values in values_by_pipeline.items()
+        if values
+    }
 
 
 def bootstrap_ci(
@@ -375,6 +635,7 @@ def perform_statistical_analysis(
     analysis: Dict[str, Any] = {
         'timestamp': datetime.now().isoformat(),
         'summary': {},
+        'per_pipeline': {},
         'per_subject': {},
         'bootstrap_ci': {},
         'comparisons': {},
@@ -422,15 +683,52 @@ def perform_statistical_analysis(
             )
 
     # ===========================================================================
-    # 2. Per-Subject Analysis (Анализ по субъектам)
+    # 2. Per-Pipeline Analysis (Сравнение SI/SD)
+    # ===========================================================================
+    print("\n" + "=" * 100)
+    print("PER-PIPELINE ANALYSIS")
+    print("=" * 100)
+
+    for pipeline in results.get('metadata', {}).get('requested_pipelines', []):
+        analysis['per_pipeline'][pipeline] = {}
+        pipeline_name = PIPELINE_NAMES.get(pipeline, pipeline)
+        print(f"\n{pipeline.upper()} — {pipeline_name}:")
+
+        for metric in metrics_list:
+            metric_map = extract_metric_per_pipeline(results, metric)
+            if pipeline not in metric_map:
+                continue
+
+            values = metric_map[pipeline]
+            mean_val, lower, upper = bootstrap_ci(values)
+            analysis['per_pipeline'][pipeline][metric] = {
+                'mean': float(mean_val),
+                'std': float(np.std(values)),
+                'min': float(np.min(values)),
+                'max': float(np.max(values)),
+                'ci_lower': float(lower),
+                'ci_upper': float(upper),
+                'n': int(len(values)),
+            }
+
+            if metric in ('f1_macro', 'accuracy', 'balanced_accuracy'):
+                print(
+                    f"  {metric}: {mean_val:.4f} ± "
+                    f"{np.std(values):.4f} "
+                    f"(n={len(values)}, 95% CI [{lower:.4f}, {upper:.4f}])"
+                )
+
+    # ===========================================================================
+    # 3. Per-Subject Analysis (Анализ по субъектам)
     # ===========================================================================
     print("\n" + "=" * 100)
     print("PER-SUBJECT ANALYSIS")
     print("=" * 100)
 
     metric_per_subject = extract_metric_per_fold(results, 'f1_macro')
+    subjects = results.get('metadata', {}).get('subjects', SUBJECTS)
 
-    for subject_id in SUBJECTS:
+    for subject_id in subjects:
         if subject_id in metric_per_subject:
             values = metric_per_subject[subject_id]
             mean_val, lower, upper = bootstrap_ci(values)
@@ -452,7 +750,7 @@ def perform_statistical_analysis(
             print(f"  Folds: [{folds_str}]")
 
     # ===========================================================================
-    # 3. Bootstrap Confidence Intervals (Доверительные интервалы)
+    # 4. Bootstrap Confidence Intervals (Доверительные интервалы)
     # ===========================================================================
     print("\n" + "=" * 100)
     print("BOOTSTRAP CONFIDENCE INTERVALS (95%)")
@@ -461,7 +759,7 @@ def perform_statistical_analysis(
     for metric in ['f1_macro', 'accuracy']:
         print(f"\n{metric.upper()}:")
         metric_map = extract_metric_per_fold(results, metric)
-        for subject_id in SUBJECTS:
+        for subject_id in subjects:
             if subject_id in metric_map:
                 values = metric_map[subject_id]
                 # Увеличиваем число итераций для точности CI
@@ -474,14 +772,14 @@ def perform_statistical_analysis(
                 print(f"  {subject_id}: {mean_val:.4f} [{lower:.4f}, {upper:.4f}]")
 
     # ===========================================================================
-    # 4. Wilcoxon Tests (Попарные сравнения)
+    # 5. Wilcoxon Tests (Попарные сравнения)
     # ===========================================================================
     print("\n" + "=" * 100)
     print("WILCOXON SIGNED-RANK TESTS (Subject Comparisons)")
     print("=" * 100)
 
     metric_per_subject = extract_metric_per_fold(results, 'f1_macro')
-    valid_subjects = [s for s in SUBJECTS if s in metric_per_subject]
+    valid_subjects = [s for s in subjects if s in metric_per_subject]
 
     p_values: List[float] = []
     comparisons: List[Dict[str, Any]] = []
@@ -562,6 +860,7 @@ def save_results(
     summary = {
         'metadata': detailed_results['metadata'],
         'summary': analysis['summary'],
+        'per_pipeline': analysis['per_pipeline'],
         'per_subject': analysis['per_subject'],
     }
     with open(summary_path, 'w', encoding='utf-8') as f:
@@ -580,9 +879,13 @@ def save_results(
         f.write("FULL K-FOLD CROSS-VALIDATION STATISTICAL REPORT\n")
         f.write("=" * 80 + "\n\n")
         f.write(f"Timestamp: {analysis['timestamp']}\n")
-        f.write(f"Subjects: {SUBJECTS}\n")
-        f.write(f"Folds: {N_FOLDS}\n")
-        f.write(f"Total Experiments: {len(SUBJECTS) * N_FOLDS}\n\n")
+        metadata = detailed_results['metadata']
+        f.write(f"Pipelines: {metadata.get('requested_pipelines', [])}\n")
+        f.write(f"Subjects: {metadata.get('subjects', SUBJECTS)}\n")
+        f.write(f"Folds: {metadata.get('n_folds', N_FOLDS)}\n")
+        f.write(
+            f"Total Experiments: {metadata.get('n_experiments', 0)}\n\n"
+        )
 
         f.write("OVERALL SUMMARY\n")
         f.write("-" * 80 + "\n")
@@ -594,6 +897,22 @@ def save_results(
             f.write(
                 f"  Range: [{stats['min']:.4f}, {stats['max']:.4f}]\n"
             )
+
+        f.write("\n\nPER-PIPELINE RESULTS\n")
+        f.write("-" * 80 + "\n")
+        for pipeline, metrics in analysis['per_pipeline'].items():
+            f.write(f"\n{pipeline.upper()}:\n")
+            for metric in ('f1_macro', 'accuracy', 'balanced_accuracy'):
+                if metric not in metrics:
+                    continue
+                stats = metrics[metric]
+                f.write(
+                    f"  {metric}: {stats['mean']:.4f} ± "
+                    f"{stats['std']:.4f} "
+                    f"(n={stats['n']}, 95% CI "
+                    f"[{stats['ci_lower']:.4f}, "
+                    f"{stats['ci_upper']:.4f}])\n"
+                )
 
         f.write("\n\nPER-SUBJECT RESULTS\n")
         f.write("-" * 80 + "\n")
@@ -618,7 +937,7 @@ def save_results(
 # Main Entry Point
 # =============================================================================
 
-def main() -> bool:
+def main(pipeline_override: Optional[str] = None) -> bool:
     """
     Description:
     ---------------
@@ -635,7 +954,7 @@ def main() -> bool:
     """
     try:
         # Phase 1: Обучение
-        detailed_results = run_full_evaluation()
+        detailed_results = run_full_evaluation(pipeline_override)
 
         success_exp = detailed_results['metadata'].get('success_experiments', 0)
         if success_exp == 0:
@@ -654,16 +973,33 @@ def main() -> bool:
         print("=" * 100)
         save_results(detailed_results, analysis)
 
+        # Phase 4: Генерация визуализаций
+        print("\n" + "=" * 100)
+        print("GENERATING VISUALIZATIONS")
+        print("=" * 100)
+        try:
+            from visualization import save_full_eval_plots
+            save_full_eval_plots(detailed_results, analysis, RESULTS_DIR)
+        except Exception as exc:
+            print(f'[viz] Визуализация пропущена: {exc}')
+
         # Финальное резюме
         print("\n" + "=" * 100)
         print("🎉 FULL EVALUATION PIPELINE COMPLETED SUCCESSFULLY")
         print("=" * 100)
         print(f"\nResults saved to: {RESULTS_DIR}")
         print("Files:")
-        print(f"  - results_detailed.json (detailed per-experiment results)")
-        print(f"  - results_summary.json (aggregated summary)")
+        print(f"  - results_detailed.json  (detailed per-experiment results)")
+        print(f"  - results_summary.json   (aggregated summary)")
         print(f"  - statistical_analysis.json (statistical tests)")
-        print(f"  - statistical_analysis.txt (human-readable report)")
+        print(f"  - statistical_analysis.txt  (human-readable report)")
+        print(f"  - plots/cv_boxplot.png          (metric distributions)")
+        print(f"  - plots/subject_fold_heatmap.png (subject × fold grid)")
+        print(f"  - plots/bootstrap_ci.png         (95% CI per subject)")
+        print(f"  - plots/overall_metrics_bar.png  (mean ± std bar chart)")
+        print(f"  - tables/full_eval_summary.csv")
+        print(f"  - tables/per_subject_metrics.csv")
+        print(f"  - tables/metrics_report.md")
         print("\n")
 
         return True
@@ -676,5 +1012,6 @@ def main() -> bool:
 
 
 if __name__ == '__main__':
-    success = main()
+    args = parse_args()
+    success = main(pipeline_override=args.pipeline)
     sys.exit(0 if success else 1)

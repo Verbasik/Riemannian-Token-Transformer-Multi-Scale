@@ -737,4 +737,16 @@ def save_artifacts(
             ensure_ascii=False
         )
 
+    # Генерация визуализаций (графики + таблицы метрик)
+    try:
+        from visualization import save_single_run_plots
+        save_single_run_plots(
+            history=history,
+            val_outputs=val_outputs,
+            attn_stats=attn_stats,
+            res_dir=res_dir,
+        )
+    except Exception as exc:
+        print(f'[viz] Визуализация пропущена: {exc}')
+
     print(f"Артефакты сохранены в {ckpt_dir} и {res_dir}")

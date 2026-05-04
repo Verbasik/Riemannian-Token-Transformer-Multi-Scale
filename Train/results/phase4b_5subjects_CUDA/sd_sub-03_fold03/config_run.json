@@ -1,0 +1,89 @@
+{
+  "data": {
+    "data_dir": "/mnt/data/data/derivatives/preprocessed_pkl",
+    "subject_ids": [
+      "sub-03"
+    ],
+    "task": "imagine",
+    "normalize": "zscore_hybrid",
+    "exclude_channels": [
+      124
+    ]
+  },
+  "model": {
+    "n_channels": 125,
+    "n_classes": 8,
+    "proj_channels": 24,
+    "window_size_small": 128,
+    "stride_small": 96,
+    "window_size_large": 256,
+    "stride_large": 128,
+    "d_model": 128,
+    "n_heads": 4,
+    "ff_dim": 256,
+    "n_layers": 2,
+    "dropout": 0.1,
+    "eps": 0.0001,
+    "attn_heads": 1,
+    "cov_type": "corr",
+    "oas_min_alpha": 0.1,
+    "use_subject_embed": false,
+    "subject_embed_dim": 16,
+    "subject_embed_dropout": 0.2,
+    "unknown_subject_policy": "auto",
+    "unknown_subject_policy_resolved": "error"
+  },
+  "training": {
+    "n_epochs": 50,
+    "batch_size": 16,
+    "learning_rate": 0.0003,
+    "weight_decay": 0.0001,
+    "early_stopping_patience": 8,
+    "use_amp": true,
+    "grad_clip": 1.0,
+    "num_workers": 0,
+    "pin_memory": true,
+    "persistent_workers": false,
+    "prefetch_factor": 4,
+    "allow_multiprocessing_dataloader": false
+  },
+  "cv": {
+    "protocol": "within_subject",
+    "n_splits": 5,
+    "random_state": 42,
+    "mode": "within_subject",
+    "fold_index": 2
+  },
+  "evaluation": {
+    "pipeline": "sd",
+    "si_use_subject_embed": true,
+    "sd_use_subject_embed": false,
+    "model_scope": "per_subject",
+    "experiment_subject": "sub-03"
+  },
+  "optimizer": {
+    "name": "adamw",
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "subject_embed_weight_decay": 0.0005
+  },
+  "scheduler": {
+    "name": "cosine",
+    "T_max": 20,
+    "warmup_epochs": 3
+  },
+  "loss": {
+    "type": "cb_focal",
+    "beta": 0.999,
+    "gamma": 1.75
+  },
+  "logging": {
+    "save_attn": false
+  },
+  "seed": 42,
+  "device": "cuda",
+  "checkpoint_dir": "Train/checkpoints/phase4b_5subjects_CUDA/sd_sub-03_fold03",
+  "results_dir": "Train/results/phase4b_5subjects_CUDA/sd_sub-03_fold03"
+}

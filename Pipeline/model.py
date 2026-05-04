@@ -157,6 +157,8 @@ class RTTMultiScale(nn.Module):
         n_subjects: int - Общее количество субъектов (для Embedding слоя).
         subject_embed_dim: int - Размерность эмбеддинга субъекта.
         subject_embed_dropout: float - Dropout для эмбеддинга субъекта.
+        unknown_subject_policy: str - Policy для subject_id=-1:
+            'error', 'zero' или 'mean'.
 
     Returns:
     ---------------
@@ -204,6 +206,7 @@ class RTTMultiScale(nn.Module):
         n_subjects: int = 5,
         subject_embed_dim: int = 16,
         subject_embed_dropout: float = 0.0,
+        unknown_subject_policy: str = 'error',
     ):
         super().__init__()
 
@@ -216,6 +219,15 @@ class RTTMultiScale(nn.Module):
         self.cov_type = cov_type
         self.oas_min_alpha = oas_min_alpha
         self.use_subject_embed = use_subject_embed
+        self.unknown_subject_policy = unknown_subject_policy
+
+        allowed_unknown_policies = {'error', 'zero', 'mean'}
+        if self.unknown_subject_policy not in allowed_unknown_policies:
+            raise ValueError(
+                "unknown_subject_policy must be one of "
+                f"{sorted(allowed_unknown_policies)}, got "
+                f"'{self.unknown_subject_policy}'."
+            )
 
         # Инициализация эмбеддингов субъектов (опционально)
         if self.use_subject_embed:
@@ -273,6 +285,66 @@ class RTTMultiScale(nn.Module):
 
         # Инициализация весов
         self._reset_parameters()
+
+    def _lookup_subject_embeddings(
+        self,
+        subject_ids: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Description:
+        ---------------
+            Возвращает embedding субъектов с явной обработкой unknown IDs.
+            Индекс -1 означает subject, отсутствующий в train mapping.
+
+        Args:
+        ---------------
+            subject_ids: torch.Tensor [B] - Индексы субъектов.
+
+        Returns:
+        ---------------
+            torch.Tensor [B, subject_embed_dim].
+
+        Raises:
+        ---------------
+            ValueError: Если unseen subjects запрещены policy.
+        """
+        n_subjects = self.subject_embed.num_embeddings
+        subject_ids = subject_ids.to(dtype=torch.long)
+
+        too_large = subject_ids >= n_subjects
+        if bool(too_large.any()):
+            bad_ids = torch.unique(subject_ids[too_large]).detach().cpu()
+            raise ValueError(
+                f"subject_ids contain indices outside embedding table: "
+                f"{bad_ids.tolist()} >= {n_subjects}."
+            )
+
+        unknown_mask = subject_ids < 0
+        if not bool(unknown_mask.any()):
+            return self.subject_embed(subject_ids)
+
+        if self.unknown_subject_policy == 'error':
+            raise ValueError(
+                "Validation batch contains subject_id=-1 (unseen subject), "
+                "but unknown_subject_policy='error'. For subject-held-out "
+                "evaluation set model.use_subject_embed=False or choose "
+                "unknown_subject_policy='zero'/'mean'."
+            )
+
+        safe_ids = subject_ids.clamp(min=0)
+        subject_emb = self.subject_embed(safe_ids)
+
+        if self.unknown_subject_policy == 'zero':
+            fallback = torch.zeros_like(subject_emb)
+        else:
+            mean_emb = self.subject_embed.weight.mean(dim=0)
+            fallback = mean_emb.view(1, -1).expand_as(subject_emb)
+
+        return torch.where(
+            unknown_mask.unsqueeze(-1),
+            fallback,
+            subject_emb
+        )
 
     def _reset_parameters(self) -> None:
         """
@@ -449,7 +521,7 @@ class RTTMultiScale(nn.Module):
                 raise ValueError(
                     "subject_ids required when use_subject_embed=True"
                 )
-            subject_emb = self.subject_embed(subject_ids)
+            subject_emb = self._lookup_subject_embeddings(subject_ids)
             subject_emb = self.subject_embed_drop(subject_emb)
             combined = torch.cat([combined, subject_emb], dim=-1)
 
