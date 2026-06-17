@@ -1,3 +1,26 @@
+# macOS / Windows / Linux filesystem noise
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+*~
+~$*
+
+# Editor / IDE local state
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*.sublime-project
+*.sublime-workspace
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -35,6 +58,15 @@ MANIFEST
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
+
+# Runtime logs and temporary files
+logs/
+*.out
+*.err
+*.tmp
+*.temp
+*.bak
+*.orig
 
 # Unit test / coverage reports
 htmlcov/
@@ -77,6 +109,8 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+.ipynb_checkpoints/
+.jupyter/
 
 # IPython
 profile_default/
@@ -129,12 +163,16 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
+!.env.example
+!.env.sample
 .venv
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+.conda/
 
 # Spyder project settings
 .spyderproject
@@ -185,6 +223,58 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Secrets and local credentials
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+.secrets/
+
+# Machine learning / experiment artifacts
+checkpoints/
+checkpoint/
+model_checkpoints/
+models/
+weights/
+artifacts/
+outputs/
+runs/
+wandb/
+mlruns/
+mlartifacts/
+lightning_logs/
+tensorboard/
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+*.onnx
+*.joblib
+*.pkl
+*.pickle
+
+# Large local datasets and EEG/raw-data caches
+data/raw/
+data/interim/
+data/processed/
+data/external/
+datasets/
+*.mat
+*.h5
+*.hdf5
+*.fif
+*.edf
+*.bdf
+*.set
+*.vhdr
+*.vmrk
+*.eeg
+*.mff
+*.cnt
+*.xdf
 
 # Cursor
 #  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
