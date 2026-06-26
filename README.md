@@ -430,6 +430,23 @@ EEG_to_Text/
 
 ---
 
+## Citation
+
+```bibtex
+@thesis{verbetskii2026rttmultiscale,
+title       = {Riemannian geometric features and transformer for decoding imagined speech from EEG},
+author      = {Verbetskii, Eduard Igorevich},
+institution = {Moscow Aviation Institute (National Research University)},
+location    = {Moscow, Russia},
+year        = {2026},
+type        = {Master of Science},
+note        = {Institute No. 8 `Computer Science and Applied Mathematics''; educational program `Machine Learning and Data Analysis''},
+langid      = {russian}
+}
+```
+
+---
+
 <div align="center">
 
 ### ⭐ Если проект вам нравится, поставьте звезду на GitHub!
