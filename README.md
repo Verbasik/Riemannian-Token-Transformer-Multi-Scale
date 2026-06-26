@@ -410,29 +410,6 @@ EEG_to_Text/
 Если вы используете этот проект в исследованиях, пожалуйста, цитируйте:
 
 ```bibtex
-@software{Verbetskiy_EEG_to_Text_Phase4B_2026,
-  author      = {Вербецкий, Эдуард Игоревич},
-  title       = {EEG\_to\_Text: Imagined-Speech EEG Decoder (Phase 4B)},
-  year        = {2026},
-  institution = {МАИ (НИУ)},
-  url         = {https://github.com/<org>/EEG_to_Text}
-}
-```
-
----
-
-## 📞 Контакты
-
-- 👨‍💼 **Автор:** Эдуард Вербецкий
-- 📧 **Email:** [verbasik@gmail.com](mailto:verbasik@gmail.com)
-- 🏛️ **Учреждение:** МАИ (НИУ)
-- 📍 **Проект:** Imagined Speech Decoding
-
----
-
-## Citation
-
-```bibtex
 @thesis{verbetskii2026rttmultiscale,
 title       = {Riemannian geometric features and transformer for decoding imagined speech from EEG},
 author      = {Verbetskii, Eduard Igorevich},
@@ -444,6 +421,15 @@ note        = {Institute No. 8 `Computer Science and Applied Mathematics''; educ
 langid      = {russian}
 }
 ```
+
+---
+
+## 📞 Контакты
+
+- 👨‍💼 **Автор:** Эдуард Вербецкий
+- 📧 **Email:** [verbasik@gmail.com](mailto:verbasik@gmail.com)
+- 🏛️ **Учреждение:** МАИ (НИУ)
+- 📍 **Проект:** Imagined Speech Decoding
 
 ---
 
