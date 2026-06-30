@@ -1,15 +1,15 @@
 # file: feature_engineering.py
 # -*- coding: utf-8 -*-
 """
-Feature Engineering для EEG-сигналов.
+Feature engineering for EEG signals.
 
-Реализует извлечение признаков для классических ML алгоритмов:
-1. Спектральные признаки (PSD в частотных диапазонах)
-2. Статистические признаки (mean, std, skewness, kurtosis)
-3. Вейвлет-признаки (энергия в масштабах)
-4. Временные признаки (Hjorth parameters)
+Implements feature extraction for classic ML algorithms:
+1. Spectral features (PSD in frequency bands)
+2. Statistical features (mean, std, skewness, kurtosis)
+3. Wavelet features (energy across scales)
+4. Temporal features (Hjorth parameters)
 
-Основано на литературе (Hossain et al. 2025, Torres-García et al. 2013).
+Based on the literature (Hossain et al. 2025, Torres-García et al. 2013).
 """
 
 # =============================================================================
@@ -27,7 +27,7 @@ from scipy.integrate import simpson
 
 
 # =============================================================================
-# Спектральные признаки (Spectral Features)
+# Spectral features
 # =============================================================================
 
 def compute_psd_features(
@@ -38,50 +38,50 @@ def compute_psd_features(
     """
     Description:
     ---------------
-        Вычисляет мощность спектральной плотности (PSD) в заданных
-        частотных диапазонах для каждого канала EEG.
-        Использует метод Уэлча для оценки спектра и интегрирование
-        Симпсона для расчета мощности полосы.
+        Computes power spectral density (PSD) power in specified
+        frequency bands for each EEG channel.
+        Uses Welch's method for spectrum estimation and Simpson
+        integration to compute band power.
 
     Args:
     ---------------
-        eeg: ndarray [n_channels, n_samples] - Входной сигнал EEG.
-        fs: float - Частота дискретизации в Гц (по умолчанию 500.0).
-        bands: Dict[str, Tuple[float, float]] - Словарь частотных
-            диапазонов вида {'band_name': (low_freq, high_freq)}.
-            Если None, используются стандартные диапазоны EEG.
+        eeg: ndarray [n_channels, n_samples] - Input EEG signal.
+        fs: float - Sampling frequency in Hz (default: 500.0).
+        bands: Dict[str, Tuple[float, float]] - Frequency-band dictionary
+            in the form {'band_name': (low_freq, high_freq)}. If None,
+            standard EEG bands are used.
 
     Returns:
     ---------------
-        ndarray [n_channels * n_bands]: Массив признаков мощности.
+        ndarray [n_channels * n_bands]: Power feature array.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
         >>> signal = np.random.randn(2, 1000)
         >>> feats = compute_psd_features(signal, fs=500.0)
-        >>> feats.shape[0] == 2 * 5  # 2 канала, 5 стандартных полос
+        >>> feats.shape[0] == 2 * 5  # 2 channels, 5 standard bands
         True
     """
     if bands is None:
-        # Стандартные EEG диапазоны согласно литературе
+        # Standard EEG bands according to the literature.
         bands = {
-            'delta': (0.5, 4.0),    # 0.5-4 Hz: глубокий сон
-            'theta': (4.0, 8.0),    # 4-8 Hz: релаксация, медитация
-            'alpha': (8.0, 13.0),   # 8-13 Hz: спокойное бодрствование
-            'beta': (13.0, 30.0),   # 13-30 Hz: активное мышление
-            'gamma': (30.0, 45.0),  # 30-45 Hz: когнитивная обработка
+            'delta': (0.5, 4.0),    # 0.5-4 Hz: deep sleep
+            'theta': (4.0, 8.0),    # 4-8 Hz: relaxation, meditation
+            'alpha': (8.0, 13.0),   # 8-13 Hz: relaxed wakefulness
+            'beta': (13.0, 30.0),   # 13-30 Hz: active thinking
+            'gamma': (30.0, 45.0),  # 30-45 Hz: cognitive processing
         }
 
     n_channels = eeg.shape[0]
     features = []
 
     for ch_idx in range(n_channels):
-        # Welch's method для оценки PSD
-        # nperseg ограничен длиной сигнала или 256 отсчетами
+        # Welch's method for PSD estimation.
+        # nperseg is capped by the signal length or 256 samples.
         freqs, psd = signal.welch(
             eeg[ch_idx, :],
             fs=fs,
@@ -89,12 +89,12 @@ def compute_psd_features(
             noverlap=None
         )
 
-        # Извлекаем мощность в каждом диапазоне
+        # Extract power in each band.
         for band_name, (low, high) in bands.items():
-            # Логическая маска для выбора частот в диапазоне
+            # Boolean mask for selecting frequencies in the band.
             idx_band = np.logical_and(freqs >= low, freqs <= high)
-            # Интегрируем PSD в диапазоне (метод Симпсона)
-            # Это дает полную энергию в полосе частот
+            # Integrate PSD within the band (Simpson's method).
+            # This gives the total energy in the frequency band.
             band_power = simpson(psd[idx_band], x=freqs[idx_band])
             features.append(band_power)
 
@@ -108,27 +108,27 @@ def compute_band_ratios(
     """
     Description:
     ---------------
-        Вычисляет соотношения мощностей между ключевыми частотными
-        диапазонами. Эти отношения часто более информативны для
-        классификации состояний мозга, чем абсолютная мощность.
+        Computes power ratios between key frequency bands. These ratios
+        are often more informative than absolute power for classifying
+        brain states.
 
-        Рассчитываемые ratios:
-        - theta/alpha: индикатор релаксации vs активности.
-        - beta/alpha: индикатор когнитивной активации.
-        - (theta+alpha)/(alpha+beta): индекс утомления.
+        Computed ratios:
+        - theta/alpha: relaxation vs activity indicator.
+        - beta/alpha: cognitive activation indicator.
+        - (theta+alpha)/(alpha+beta): fatigue index.
 
     Args:
     ---------------
-        eeg: ndarray [n_channels, n_samples] - Входной сигнал EEG.
-        fs: float - Частота дискретизации в Гц.
+        eeg: ndarray [n_channels, n_samples] - Input EEG signal.
+        fs: float - Sampling frequency in Hz.
 
     Returns:
     ---------------
-        ndarray [n_channels * 3]: Массив соотношений.
+        ndarray [n_channels * 3]: Ratio array.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -147,7 +147,7 @@ def compute_band_ratios(
 
     n_channels = eeg.shape[0]
     features = []
-    # Малое число для защиты от деления на ноль
+    # Small value to protect against division by zero.
     epsilon = 1e-8
 
     for ch_idx in range(n_channels):
@@ -157,13 +157,13 @@ def compute_band_ratios(
             nperseg=min(256, eeg.shape[1])
         )
 
-        # Вычисляем мощность в каждом диапазоне
+        # Compute power in each band.
         powers = {}
         for band_name, (low, high) in bands.items():
             idx = np.logical_and(freqs >= low, freqs <= high)
             powers[band_name] = simpson(psd[idx], x=freqs[idx])
 
-        # Соотношения с защитой от деления на ноль
+        # Ratios protected against division by zero.
         theta_alpha = powers['theta'] / (powers['alpha'] + epsilon)
         beta_alpha = powers['beta'] / (powers['alpha'] + epsilon)
         fatigue_idx = (
@@ -177,37 +177,36 @@ def compute_band_ratios(
 
 
 # =============================================================================
-# Статистические признаки (Statistical Features)
+# Statistical features
 # =============================================================================
 
 def compute_statistical_features(eeg: np.ndarray) -> np.ndarray:
     """
     Description:
     ---------------
-        Вычисляет набор статистических признаков временного ряда
-        для каждого канала EEG. Описывает форму распределения
-        амплитуд сигнала.
+        Computes a set of time-series statistical features for each EEG
+        channel. Describes the shape of the signal amplitude distribution.
 
-        Признаки:
-        - Mean: Среднее значение (смещение сигнала).
-        - Std: Стандартное отклонение (разброс).
-        - Skewness: Асимметрия распределения.
-        - Kurtosis: Эксцесс (островершинность).
-        - Min, Max: Экстремумы.
-        - Range: Размах (Max - Min).
-        - RMS: Среднеквадратичное значение (энергия сигнала).
+        Features:
+        - Mean: Average value (signal offset).
+        - Std: Standard deviation (spread).
+        - Skewness: Distribution asymmetry.
+        - Kurtosis: Distribution peakedness.
+        - Min, Max: Extremes.
+        - Range: Spread (Max - Min).
+        - RMS: Root mean square value (signal energy).
 
     Args:
     ---------------
-        eeg: ndarray [n_channels, n_samples] - Входной сигнал EEG.
+        eeg: ndarray [n_channels, n_samples] - Input EEG signal.
 
     Returns:
     ---------------
-        ndarray [n_channels * 8]: Массив статистических признаков.
+        ndarray [n_channels * 8]: Statistical feature array.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -229,7 +228,7 @@ def compute_statistical_features(eeg: np.ndarray) -> np.ndarray:
         min_val = np.min(signal_ch)
         max_val = np.max(signal_ch)
         range_val = max_val - min_val
-        # RMS коррелирует с энергией сигнала
+        # RMS correlates with signal energy.
         rms_val = np.sqrt(np.mean(signal_ch ** 2))
 
         features.extend([
@@ -241,7 +240,7 @@ def compute_statistical_features(eeg: np.ndarray) -> np.ndarray:
 
 
 # =============================================================================
-# Вейвлет-признаки (Wavelet Features)
+# Wavelet features
 # =============================================================================
 
 def compute_wavelet_features(
@@ -252,34 +251,33 @@ def compute_wavelet_features(
     """
     Description:
     ---------------
-        Вычисляет энергию вейвлет-коэффициентов на разных масштабах
-        с помощью дискретного вейвлет-преобразования (DWT).
-        Позволяет анализировать сигнал одновременно во времени и
-        частоте, выявляя локальные особенности.
+        Computes wavelet coefficient energy at different scales using
+        the discrete wavelet transform (DWT). Enables simultaneous
+        time-frequency signal analysis and detection of local features.
 
-        Используется вейвлет Добеши (db4) по умолчанию, так как он
-        хорошо подходит для анализа биосигналов.
+        The Daubechies wavelet (db4) is used by default because it is
+        well suited for biosignal analysis.
 
     Args:
     ---------------
-        eeg: ndarray [n_channels, n_samples] - Входной сигнал EEG.
-        wavelet: str - Тип материнского вейвлета (по умолчанию 'db4').
-        level: int - Уровень декомпозиции (глубина разложения).
+        eeg: ndarray [n_channels, n_samples] - Input EEG signal.
+        wavelet: str - Mother wavelet type (default: 'db4').
+        level: int - Decomposition level (decomposition depth).
 
     Returns:
     ---------------
-        ndarray [n_channels * (level + 1)]: Энергия коэффициентов
-            на каждом уровне декомпозиции (детали + аппроксимация).
+        ndarray [n_channels * (level + 1)]: Coefficient energy at each
+            decomposition level (details + approximation).
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
         >>> signal = np.random.randn(1, 1000)
         >>> w_feats = compute_wavelet_features(signal, level=4)
-        >>> len(w_feats) == 5  # 4 уровня деталей + 1 аппроксимация
+        >>> len(w_feats) == 5  # 4 detail levels + 1 approximation
         True
     """
     n_channels = eeg.shape[0]
@@ -289,10 +287,10 @@ def compute_wavelet_features(
         signal_ch = eeg[ch_idx, :]
 
         # Discrete Wavelet Transform (DWT)
-        # Возвращает список: [cA_n, cD_n, cD_n-1, ..., cD_1]
+        # Returns a list: [cA_n, cD_n, cD_n-1, ..., cD_1].
         coeffs = pywt.wavedec(signal_ch, wavelet, level=level)
 
-        # Энергия на каждом уровне (сумма квадратов коэффициентов)
+        # Energy at each level (sum of squared coefficients).
         for coeff in coeffs:
             energy = np.sum(coeff ** 2)
             features.append(energy)
@@ -301,36 +299,35 @@ def compute_wavelet_features(
 
 
 # =============================================================================
-# Временные признаки (Temporal Features - Hjorth Parameters)
+# Temporal features (Hjorth parameters)
 # =============================================================================
 
 def compute_hjorth_parameters(eeg: np.ndarray) -> np.ndarray:
     """
     Description:
     ---------------
-        Вычисляет параметры Хьорта (Hjorth Parameters) для каждого
-        канала. Это простые метрики сложности сигнала во временной
-        области, вычисляемые через производные.
+        Computes Hjorth parameters for each channel. These are simple
+        time-domain signal complexity metrics computed from derivatives.
 
-        Параметры:
-        - Activity (Активность): Дисперсия сигнала (мощность).
-        - Mobility (Подвижность): Средняя частота/ширина полосы.
+        Parameters:
+        - Activity: Signal variance (power).
+        - Mobility: Mean frequency/bandwidth.
           sqrt(var(derivative) / var(signal)).
-        - Complexity (Сложность): Изменение частоты во времени.
-          Показывает, насколько сигнал отличается от чистого синуса.
+        - Complexity: Frequency variation over time. Indicates how much
+          the signal differs from a pure sine wave.
           Mobility(derivative) / Mobility(signal).
 
     Args:
     ---------------
-        eeg: ndarray [n_channels, n_samples] - Входной сигнал EEG.
+        eeg: ndarray [n_channels, n_samples] - Input EEG signal.
 
     Returns:
     ---------------
-        ndarray [n_channels * 3]: Массив параметров Хьорта.
+        ndarray [n_channels * 3]: Hjorth parameter array.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -341,7 +338,7 @@ def compute_hjorth_parameters(eeg: np.ndarray) -> np.ndarray:
     """
     n_channels = eeg.shape[0]
     features = []
-    epsilon = 1e-8  # Защита от деления на ноль
+    epsilon = 1e-8  # Protection against division by zero
 
     for ch_idx in range(n_channels):
         signal_ch = eeg[ch_idx, :]
@@ -349,23 +346,23 @@ def compute_hjorth_parameters(eeg: np.ndarray) -> np.ndarray:
         # Activity: Variance of the signal
         activity = np.var(signal_ch)
 
-        # Первая производная (скорость изменения)
+        # First derivative (rate of change).
         deriv1 = np.diff(signal_ch)
 
         # Mobility: sqrt(variance(deriv1) / variance(signal))
-        # Характеризует среднюю частоту спектра
+        # Characterizes the average spectral frequency.
         mobility = np.sqrt(np.var(deriv1) / (activity + epsilon))
 
-        # Вторая производная (ускорение изменения)
+        # Second derivative (acceleration of change).
         deriv2 = np.diff(deriv1)
 
-        # Mobility первой производной
+        # First-derivative mobility.
         mobility_deriv = np.sqrt(
             np.var(deriv2) / (np.var(deriv1) + epsilon)
         )
 
-        # Complexity: отношение подвижности производной к подвижности сигнала
-        # Значение ~1 означает простой сигнал (синусоида), >1 - сложный
+        # Complexity: derivative mobility divided by signal mobility.
+        # A value near 1 means a simple signal (sine wave), >1 means complex.
         complexity = mobility_deriv / (mobility + epsilon)
 
         features.extend([activity, mobility, complexity])
@@ -374,7 +371,7 @@ def compute_hjorth_parameters(eeg: np.ndarray) -> np.ndarray:
 
 
 # =============================================================================
-# Главная функция извлечения признаков
+# Main feature extraction function
 # =============================================================================
 
 def extract_all_features(
@@ -385,25 +382,25 @@ def extract_all_features(
     """
     Description:
     ---------------
-        Извлекает все доступные признаки из EEG сигнала, объединяя
-        результаты различных методов.feature engineering в один вектор.
-        Позволяет гибко выбирать типы признаков через параметр include.
+        Extracts all available features from an EEG signal by combining
+        the results of different feature engineering methods into one
+        vector. The `include` parameter allows flexible feature selection.
 
     Args:
     ---------------
-        eeg: ndarray [n_channels, n_samples] - Входной сигнал EEG.
-        fs: float - Частота дискретизации в Гц.
-        include: List[str] - Список типов признаков для включения.
-            Допустимые значения: 'psd', 'ratios', 'stats', 'wavelet',
-            'hjorth'. Если None, включаются все.
+        eeg: ndarray [n_channels, n_samples] - Input EEG signal.
+        fs: float - Sampling frequency in Hz.
+        include: List[str] - List of feature types to include.
+            Accepted values: 'psd', 'ratios', 'stats', 'wavelet',
+            'hjorth'. If None, all are included.
 
     Returns:
     ---------------
-        ndarray [total_features]: Объединенный вектор признаков.
+        ndarray [total_features]: Combined feature vector.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -437,7 +434,7 @@ def extract_all_features(
         hjorth_feats = compute_hjorth_parameters(eeg)
         all_features.append(hjorth_feats)
 
-    # Объединяем все признаки в один плоский вектор
+    # Combine all features into one flat vector.
     return np.concatenate(all_features)
 
 
@@ -449,24 +446,24 @@ def batch_extract_features(
     """
     Description:
     ---------------
-        Извлекает признаки для батча EEG сигналов.
-        Итерируется по первому измерению (batch_size) и применяет
-        extract_all_features к каждому сэмплу.
+        Extracts features for a batch of EEG signals. Iterates over the
+        first dimension (batch_size) and applies extract_all_features to
+        each sample.
 
     Args:
     ---------------
         eeg_batch: ndarray [batch_size, n_channels, n_samples] -
-            Батч сигналов EEG.
-        fs: float - Частота дискретизации в Гц.
-        include: List[str] - Список типов признаков (см. extract_all).
+            Batch of EEG signals.
+        fs: float - Sampling frequency in Hz.
+        include: List[str] - List of feature types (see extract_all).
 
     Returns:
     ---------------
-        ndarray [batch_size, total_features]: Матрица признаков.
+        ndarray [batch_size, total_features]: Feature matrix.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------

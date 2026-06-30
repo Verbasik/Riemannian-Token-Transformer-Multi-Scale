@@ -1,14 +1,14 @@
 # file: trainer.py
 # -*- coding: utf-8 -*-
 """
-Циклы обучения/оценки и логгинг артефактов.
+Training/evaluation loops and artifact logging.
 
-Модуль содержит:
-1. Реализацию Class-Balanced Focal Loss для работы с дисбалансом классов.
-2. Функции вычисления метрик (Accuracy, F1, Precision, Recall).
-3. Цикл оценки модели с опциональным сбором предсказаний и attention статистик.
-4. Основной цикл обучения с поддержкой AMP, градиентного клиппинга и Early Stopping.
-5. Утилиты для сохранения артефактов (веса, метрики, история, конфиг).
+The module contains:
+1. Class-Balanced Focal Loss implementation for class imbalance.
+2. Metric computation functions (Accuracy, F1, Precision, Recall).
+3. Model evaluation loop with optional prediction and attention-stat collection.
+4. Main training loop with AMP, gradient clipping, and Early Stopping support.
+5. Utilities for saving artifacts (weights, metrics, history, config).
 """
 
 # =============================================================================
@@ -42,28 +42,28 @@ from utils import print_metrics
 
 
 # =============================================================================
-# Утилиты сериализации и проверки устройств
+# Serialization and device-check utilities
 # =============================================================================
 
 def _to_serializable(obj: Any) -> Any:
     """
     Description:
     ---------------
-        Рекурсивно конвертирует объект в JSON-совместимый формат.
-        Обрабатывает специфичные типы: Path, torch.device, numpy скаляры,
-        словари и списки.
+        Recursively converts an object to a JSON-compatible format.
+        Handles specific types: Path, torch.device, NumPy scalars,
+        dictionaries, and lists.
 
     Args:
     ---------------
-        obj: Any - Объект для конвертации.
+        obj: Any - Object to convert.
 
     Returns:
     ---------------
-        Any: Сериализуемый объект (str, int, float, list, dict).
+        Any: Serializable object (str, int, float, list, dict).
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -87,20 +87,20 @@ def _is_cuda_device(device: Any) -> bool:
     """
     Description:
     ---------------
-        Нормализует проверку устройства на CUDA.
-        Работает как с объектами torch.device, так и со строками.
+        Normalizes CUDA device checks. Works with both torch.device
+        objects and strings.
 
     Args:
     ---------------
-        device: Any - Устройство (torch.device или str).
+        device: Any - Device (torch.device or str).
 
     Returns:
     ---------------
-        bool: True, если устройство CUDA, иначе False.
+        bool: True if the device is CUDA, otherwise False.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -113,7 +113,7 @@ def _is_cuda_device(device: Any) -> bool:
 
 
 # =============================================================================
-# Функции потерь и метрики (Loss Functions & Metrics)
+# Loss functions and metrics
 # =============================================================================
 
 class ClassBalancedFocalLoss(nn.Module):
@@ -121,27 +121,27 @@ class ClassBalancedFocalLoss(nn.Module):
     Description:
     ---------------
         Class-Balanced Focal Loss.
-        Комбинирует взвешивание классов (Class-Balanced) для учета дисбаланса
-        и фокусировку на сложных примерах (Focal Loss).
+        Combines class weighting (Class-Balanced) to handle imbalance
+        and focusing on hard examples (Focal Loss).
 
-        Формула:
+        Formula:
         CB_weight = (1 - beta) / (1 - beta^n)
         FL_weight = (1 - p_t)^gamma
         Loss = - CB_weight * FL_weight * log(p_t)
 
     Args:
     ---------------
-        class_counts: np.ndarray - Количество примеров для каждого класса.
-        beta: float - Параметр эффективного числа примеров (обычно 0.9999).
-        gamma: float - Параметр фокусировки (обычно 2.0).
+        class_counts: np.ndarray - Number of examples per class.
+        beta: float - Effective-number parameter (usually 0.9999).
+        gamma: float - Focusing parameter (usually 2.0).
 
     Returns:
     ---------------
-        Tensor: Скалярное значение потерь.
+        Tensor: Scalar loss value.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -160,13 +160,13 @@ class ClassBalancedFocalLoss(nn.Module):
         super().__init__()
         counts = torch.as_tensor(class_counts, dtype=torch.float32)
 
-        # Вычисление эффективного числа примеров
+        # Compute the effective number of examples.
         effective_num = 1.0 - torch.pow(beta, counts)
 
-        # Вычисление весов классов (CB weights)
+        # Compute class weights (CB weights).
         alpha = (1.0 - beta) / effective_num.clamp(min=1e-8)
 
-        # Нормализация весов так, чтобы их сумма равнялась числу классов
+        # Normalize weights so their sum equals the number of classes.
         alpha = alpha / alpha.sum() * len(counts)
 
         self.register_buffer('alpha', alpha)
@@ -180,33 +180,33 @@ class ClassBalancedFocalLoss(nn.Module):
         """
         Description:
         ---------------
-            Вычисляет значение функции потерь.
+            Computes the loss value.
 
         Args:
         ---------------
-            logits: torch.Tensor [B, C] - Логиты модели.
-            targets: torch.Tensor [B] - Индексы истинных классов.
+            logits: torch.Tensor [B, C] - Model logits.
+            targets: torch.Tensor [B] - True class indices.
 
         Returns:
         ---------------
-            torch.Tensor: Скалярное значение потерь.
+            torch.Tensor: Scalar loss value.
         """
         probs = F.softmax(logits, dim=-1)
 
-        # Извлечение вероятности правильного класса (p_t)
+        # Extract the correct-class probability (p_t).
         pt = torch.gather(
             probs,
             -1,
             targets.unsqueeze(-1)
         ).squeeze(-1)
 
-        # Выбор веса класса для каждого примера
+        # Select the class weight for each example.
         alpha_t = self.alpha[targets]
 
-        # Вычисление фокусирующего веса (1 - p_t)^gamma
+        # Compute the focusing weight (1 - p_t)^gamma.
         focal_weight = torch.pow(1.0 - pt, self.gamma)
 
-        # Финальная формула потерь
+        # Final loss formula.
         loss = -alpha_t * focal_weight * torch.log(pt.clamp(min=1e-8))
 
         return loss.mean()
@@ -220,22 +220,22 @@ def compute_metrics(
     """
     Description:
     ---------------
-        Вычисляет набор метрик классификации.
+        Computes a set of classification metrics.
 
     Args:
     ---------------
-        y_true: np.ndarray - Истинные метки.
-        y_pred: np.ndarray - Предсказанные метки.
-        average: str - Стратегия усреднения ('macro', 'weighted', etc.).
+        y_true: np.ndarray - True labels.
+        y_pred: np.ndarray - Predicted labels.
+        average: str - Averaging strategy ('macro', 'weighted', etc.).
 
     Returns:
     ---------------
-        Dict[str, float]: Словарь с метриками (accuracy, f1, precision, recall,
+        Dict[str, float]: Dictionary with metrics (accuracy, f1, precision, recall,
             balanced_accuracy).
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -259,7 +259,7 @@ def compute_metrics(
 
 
 # =============================================================================
-# Оценка модели (Evaluation)
+# Model evaluation
 # =============================================================================
 
 @torch.no_grad()
@@ -278,30 +278,30 @@ def evaluate_with_outputs(
     """
     Description:
     ---------------
-        Проводит оценку модели на валидационной выборке.
-        Опционально собирает предсказания (probabilities, labels) и
-        статистики механизма внимания (attention weights) для последующего
-        анализа интерпретируемости.
+        Evaluates the model on the validation split. Optionally collects
+        predictions (probabilities, labels) and attention mechanism
+        statistics (attention weights) for subsequent interpretability
+        analysis.
 
     Args:
     ---------------
-        model: nn.Module - Модель для оценки.
-        loader: DataLoader - Загрузчик данных.
-        device: str - Устройство для вычислений.
-        criterion: nn.Module - Функция потерь (для расчета val loss).
-        collect_outputs: bool - Собирать ли полные предсказания.
-        collect_attn: bool - Собирать ли attention статистики.
+        model: nn.Module - Model to evaluate.
+        loader: DataLoader - Data loader.
+        device: str - Compute device.
+        criterion: nn.Module - Loss function (for val loss calculation).
+        collect_outputs: bool - Whether to collect full predictions.
+        collect_attn: bool - Whether to collect attention statistics.
 
     Returns:
     ---------------
         Tuple[Dict, Optional[Dict], Optional[Dict]]:
-            - metrics: Словарь метрик.
-            - outputs: Словарь с массивами предсказаний (если collect_outputs).
-            - attn_stats: Словарь со средними attention весами (если collect_attn).
+            - metrics: Metrics dictionary.
+            - outputs: Dictionary with prediction arrays (if collect_outputs).
+            - attn_stats: Dictionary with mean attention weights (if collect_attn).
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -332,7 +332,7 @@ def evaluate_with_outputs(
 
         sample_ids = batch.get('sample_id')
 
-        # Прямой проход
+        # Forward pass.
         out = model(
             eeg,
             subject_ids=subject_ids,
@@ -342,7 +342,7 @@ def evaluate_with_outputs(
         if collect_attn:
             logits, attn_stats = out
             if attn_stats is not None:
-                # Усреднение весов внимания по батчам
+                # Average attention weights across batches.
                 # attn_stats['weights_tok_mean']: [L, H]
                 w = attn_stats['weights_tok_mean']
                 if attn_sum is None:
@@ -351,7 +351,7 @@ def evaluate_with_outputs(
                     attn_sum += w.detach().cpu()
                 attn_count += 1
 
-                # Сохранение мета-информации (не зависит от батча)
+                # Store meta-information (batch-independent).
                 attn_meta = {
                     'head_weights': (
                         attn_stats['head_weights'].detach().cpu().numpy()
@@ -378,18 +378,18 @@ def evaluate_with_outputs(
             all_subj.append(subj_np)
 
             if sample_ids is not None:
-                # sample_id может быть тензором или списком
+                # sample_id may be a tensor or a list.
                 sid_np = np.array(sample_ids)
                 all_sample_ids.append(sid_np)
 
-    # Конкатенация результатов
+    # Concatenate results.
     y_pred = np.concatenate(all_preds)
     y_true = np.concatenate(all_labels)
 
     metrics = compute_metrics(y_true, y_pred, average='macro')
     metrics['loss'] = total_loss / len(loader)
 
-    # Формирование словаря выводов
+    # Build outputs dictionary.
     outputs: Optional[Dict[str, np.ndarray]] = None
     if collect_outputs:
         outputs = {
@@ -406,7 +406,7 @@ def evaluate_with_outputs(
             ),
         }
 
-    # Формирование статистик внимания
+    # Build attention statistics.
     attn_stats_out: Optional[Dict[str, np.ndarray]] = None
     if collect_attn and attn_sum is not None and attn_count > 0:
         attn_stats_out = {
@@ -419,7 +419,7 @@ def evaluate_with_outputs(
 
 
 # =============================================================================
-# Обучение (Training Loop)
+# Training loop
 # =============================================================================
 
 def train_loop(
@@ -440,36 +440,36 @@ def train_loop(
     """
     Description:
     ---------------
-        Основной цикл обучения модели.
-        Поддерживает:
-        - Автоматическое смешанное точность (AMP) для ускорения на GPU.
-        - Градиентный клиппинг для стабильности.
-        - Early Stopping по метрике F1-macro.
-        - Логирование истории обучения и норм градиентов.
-        - Восстановление лучших весов в конце обучения.
+        Main model training loop.
+        Supports:
+        - Automatic Mixed Precision (AMP) for GPU acceleration.
+        - Gradient clipping for stability.
+        - Early Stopping by F1-macro.
+        - Training history and gradient norm logging.
+        - Best weight restoration at the end of training.
 
     Args:
     ---------------
-        model: nn.Module - Модель для обучения.
-        train_loader: DataLoader - Загрузчик тренировочных данных.
-        val_loader: DataLoader - Загрузчик валидационных данных.
-        criterion: nn.Module - Функция потерь.
-        optimizer: Optimizer - Оптимизатор.
-        scheduler: Any - Планировщик скорости обучения.
-        cfg: Dict[str, Any] - Конфигурация обучения.
-        device: str - Устройство.
+        model: nn.Module - Model to train.
+        train_loader: DataLoader - Training data loader.
+        val_loader: DataLoader - Validation data loader.
+        criterion: nn.Module - Loss function.
+        optimizer: Optimizer - Optimizer.
+        scheduler: Any - Learning-rate scheduler.
+        cfg: Dict[str, Any] - Training configuration.
+        device: str - Device.
 
     Returns:
     ---------------
         Tuple[Dict, Dict, Optional[Dict], Optional[Dict]]:
-            - history: История метрик по эпохам.
-            - final_metrics: Финальные метрики на валидации.
-            - final_outputs: Предсказания на валидации.
-            - final_attn: Attention статистики.
+            - history: Per-epoch metric history.
+            - final_metrics: Final validation metrics.
+            - final_outputs: Validation predictions.
+            - final_attn: Attention statistics.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -478,7 +478,7 @@ def train_loop(
     use_cuda = _is_cuda_device(device)
     use_amp = cfg['training']['use_amp'] and use_cuda
 
-    # GradScaler для AMP
+    # GradScaler for AMP.
     scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
 
     best_state: Optional[Dict[str, torch.Tensor]] = None
@@ -498,10 +498,10 @@ def train_loop(
     n_epochs = cfg['training']['n_epochs']
     grad_clip = cfg['training']['grad_clip']
 
-    print(f"\nНачало обучения на {n_epochs} эпох...")
-    print(f"Устройство: {device}, AMP: {use_amp}")
+    print(f"\nStarting training for {n_epochs} epochs...")
+    print(f"Device: {device}, AMP: {use_amp}")
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"Параметров в модели: {n_params:,}")
+    print(f"Model parameters: {n_params:,}")
 
     use_subject_embed = getattr(model, 'use_subject_embed', False)
 
@@ -516,7 +516,7 @@ def train_loop(
 
             optimizer.zero_grad(set_to_none=True)
 
-            # Forward pass с AMP
+            # Forward pass with AMP.
             with torch.cuda.amp.autocast(enabled=use_amp):
                 if use_subject_embed:
                     subject_ids = batch['subject_id'].to(
@@ -531,7 +531,7 @@ def train_loop(
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
 
-            # Вычисление нормы градиента до клиппинга (для мониторинга)
+            # Compute the gradient norm before clipping (for monitoring).
             total_norm_sq = 0.0
             for param in model.parameters():
                 if param.grad is not None:
@@ -541,16 +541,16 @@ def train_loop(
             grad_norm = total_norm_sq ** 0.5 if total_norm_sq > 0 else 0.0
             grad_norms.append(grad_norm)
 
-            # Градиентный клиппинг
+            # Gradient clipping.
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
 
-            # Шаг оптимизатора
+            # Optimizer step.
             scaler.step(optimizer)
             scaler.update()
 
             total_loss += loss.item()
 
-        # Валидация
+        # Validation.
         val_metrics, _, _ = evaluate_with_outputs(
             model,
             val_loader,
@@ -565,7 +565,7 @@ def train_loop(
 
         lr = optimizer.param_groups[0]['lr']
 
-        # Обновление истории
+        # Update history.
         history['train_loss'].append(total_loss / len(train_loader))
         history['val_loss'].append(val_metrics['loss'])
         history['val_f1_macro'].append(val_metrics['f1_macro'])
@@ -580,34 +580,34 @@ def train_loop(
             history['grad_norm_mean'].append(0.0)
             history['grad_norm_max'].append(0.0)
 
-        # Логирование эпохи
-        print(f"\nЭпоха {epoch+1}/{n_epochs} | LR: {lr:.6f}")
+        # Log epoch.
+        print(f"\nEpoch {epoch+1}/{n_epochs} | LR: {lr:.6f}")
         print(f"  Train Loss: {history['train_loss'][-1]:.4f} | "
               f"Val Loss: {val_metrics['loss']:.4f}")
         print(f"  Val Acc:    {val_metrics['accuracy']:.4f} | "
               f"Val F1:   {val_metrics['f1_macro']:.4f}")
 
-        # Early Stopping логика
+        # Early stopping logic.
         if val_metrics['f1_macro'] > best_f1:
             best_f1 = val_metrics['f1_macro']
-            # Сохранение состояния модели на CPU
+            # Save model state on CPU.
             best_state = {
                 k: v.cpu().clone() for k, v in model.state_dict().items()
             }
             patience = 0
-            print(f"  ✅ Новая лучшая F1: {best_f1:.4f}. Модель сохранена.")
+            print(f"  ✅ New best F1: {best_f1:.4f}. Model saved.")
         else:
             patience += 1
             if patience >= cfg['training']['early_stopping_patience']:
-                print(f"\nРанняя остановка на эпохе {epoch+1}")
+                print(f"\nEarly stopping at epoch {epoch+1}")
                 break
 
-    # Восстановление лучших весов
+    # Restore best weights.
     if best_state:
         model.load_state_dict(best_state)
-        print(f"\n✅ Восстановлена лучшая модель (F1: {best_f1:.4f})")
+        print(f"\n✅ Restored best model (F1: {best_f1:.4f})")
 
-    # Финальная оценка с сбором артефактов
+    # Final evaluation with artifact collection.
     final_metrics, final_outputs, final_attn = evaluate_with_outputs(
         model,
         val_loader,
@@ -623,7 +623,7 @@ def train_loop(
 
 
 # =============================================================================
-# Сохранение артефактов (Artifact Saving)
+# Artifact saving
 # =============================================================================
 
 def save_artifacts(
@@ -637,21 +637,21 @@ def save_artifacts(
     """
     Description:
     ---------------
-        Сохраняет все артефакты эксперимента:
-        - Веса лучшей модели (.pt).
-        - Метрики и историю обучения (.json).
-        - Предсказания на валидации (.npz).
-        - Attention статистики (.npz).
-        - Полную конфигурацию запуска (.json).
+        Saves all experiment artifacts:
+        - Best model weights (.pt).
+        - Metrics and training history (.json).
+        - Validation predictions (.npz).
+        - Attention statistics (.npz).
+        - Full run configuration (.json).
 
     Args:
     ---------------
-        cfg: Dict[str, Any] - Конфигурация.
-        metrics: Dict[str, float] - Финальные метрики.
-        history: Dict[str, List[float]] - История обучения.
-        val_outputs: Optional[Dict] - Предсказания.
-        attn_stats: Optional[Dict] - Attention статистики.
-        model: nn.Module - Модель (для сохранения весов).
+        cfg: Dict[str, Any] - Configuration.
+        metrics: Dict[str, float] - Final metrics.
+        history: Dict[str, List[float]] - Training history.
+        val_outputs: Optional[Dict] - Predictions.
+        attn_stats: Optional[Dict] - Attention statistics.
+        model: nn.Module - Model (for saving weights).
 
     Returns:
     ---------------
@@ -659,7 +659,7 @@ def save_artifacts(
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -671,10 +671,10 @@ def save_artifacts(
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     res_dir.mkdir(parents=True, exist_ok=True)
 
-    # Сохранение весов модели
+    # Save model weights.
     torch.save(model.state_dict(), ckpt_dir / 'best_model.pt')
 
-    # Обработка выводов и per-class метрик
+    # Process outputs and per-class metrics.
     if val_outputs is not None:
         if (val_outputs.get('y_true') is not None and
                 val_outputs.get('y_pred') is not None):
@@ -694,17 +694,17 @@ def save_artifacts(
                 for p, r, f, s in zip(prec, rec, f1, support)
             ]
 
-        # Сохранение предсказаний
+        # Save predictions.
         np.savez(
             res_dir / 'val_preds.npz',
             **{k: v for k, v in val_outputs.items() if v is not None}
         )
 
-    # Сохранение attention статистик
+    # Save attention statistics.
     if attn_stats is not None:
         np.savez(res_dir / 'attn_stats.npz', **attn_stats)
 
-    # Сохранение метрик
+    # Save metrics.
     with open(
         res_dir / 'metrics.json', 'w', encoding='utf-8'
     ) as f:
@@ -715,7 +715,7 @@ def save_artifacts(
             ensure_ascii=False
         )
 
-    # Сохранение истории
+    # Save history.
     with open(
         res_dir / 'history.json', 'w', encoding='utf-8'
     ) as f:
@@ -726,7 +726,7 @@ def save_artifacts(
             ensure_ascii=False
         )
 
-    # Сохранение конфига для воспроизводимости
+    # Save config for reproducibility.
     with open(
         res_dir / 'config_run.json', 'w', encoding='utf-8'
     ) as f:
@@ -737,7 +737,7 @@ def save_artifacts(
             ensure_ascii=False
         )
 
-    # Генерация визуализаций (графики + таблицы метрик)
+    # Generate visualizations (plots + metric tables).
     try:
         from visualization import save_single_run_plots
         save_single_run_plots(
@@ -747,6 +747,6 @@ def save_artifacts(
             res_dir=res_dir,
         )
     except Exception as exc:
-        print(f'[viz] Визуализация пропущена: {exc}')
+        print(f'[viz] Visualization skipped: {exc}')
 
-    print(f"Артефакты сохранены в {ckpt_dir} и {res_dir}")
+    print(f"Artifacts saved to {ckpt_dir} and {res_dir}")

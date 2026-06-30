@@ -1,11 +1,11 @@
 # file: data_loader.py
 # -*- coding: utf-8 -*-
 """
-Домен данных: загрузка, предобработка и создание датасетов.
+Data domain: loading, preprocessing, and dataset creation.
 
-Содержит классы ChiscoDataset и ChiscoSubset, а также все утилиты для
-загрузки данных из pkl-файлов, преобразования меток в мета-классы и
-создания стратифицированных разрезов для кросс-валидации.
+Contains the ChiscoDataset and ChiscoSubset classes, along with all
+utilities for loading data from PKL files, converting labels to
+meta-classes, and creating stratified cross-validation splits.
 """
 
 # =============================================================================
@@ -42,22 +42,23 @@ def create_subject_mapping(
     """
     Description:
     ---------------
-        Создаёт маппинг subject_id -> integer index для embedding layer.
-        Необходимо для преобразования строковых идентификаторов субъектов
-        в числовые индексы, требуемые слоем эмбеддингов нейросети.
+        Creates a subject_id -> integer index mapping for the embedding
+        layer. Required to convert string subject identifiers into numeric
+        indices expected by the neural network embedding layer.
 
     Args:
     ---------------
-        samples: Список всех образцов данных (словари с ключом 'subject').
-        indices: Опциональные индексы подмножества для построения mapping.
+        samples: List of all data samples (dictionaries with the 'subject'
+            key).
+        indices: Optional subset indices used to build the mapping.
 
     Returns:
     ---------------
-        Dict[str, int]: Словарь соответствия ID субъекта его индексу.
+        Dict[str, int]: Mapping from subject ID to subject index.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -73,7 +74,7 @@ def create_subject_mapping(
 
 
 # =============================================================================
-# Классы Dataset
+# Dataset classes
 # =============================================================================
 
 
@@ -81,28 +82,28 @@ class ChiscoDataset(Dataset):
     """
     Description:
     ---------------
-        Класс Dataset для PyTorch, предназначенный для работы с данными
-        ЭЭГ воображаемой речи из набора данных Chisco.
-        Обрабатывает нормализацию, аугментацию и подготовку тензоров.
+        PyTorch Dataset class for imagined-speech EEG data from the
+        Chisco dataset. Handles normalization, augmentation, and tensor
+        preparation.
 
     Args:
     ---------------
-        samples: Список сэмплов данных.
-        transform: Функция аугментации данных (опционально).
-        normalize: Стратегия нормализации ('zscore', 'minmax', etc.).
-        augment_prob: Вероятность применения аугментации.
-        norm_stats: Статистика для нормализации (mean, std).
-        exclude_channels: Список индексов каналов для исключения.
-        subject_mapping: Маппинг субъектов для эмбеддингов.
+        samples: List of data samples.
+        transform: Data augmentation function (optional).
+        normalize: Normalization strategy ('zscore', 'minmax', etc.).
+        augment_prob: Probability of applying augmentation.
+        norm_stats: Normalization statistics (mean, std).
+        exclude_channels: List of channel indices to exclude.
+        subject_mapping: Subject mapping for embeddings.
 
     Returns:
     ---------------
-        Объект Dataset, готовый к итерации в DataLoader.
+        Dataset object ready for DataLoader iteration.
 
     Raises:
     ---------------
-        ValueError: Если выбрана стратегия нормализации, требующая
-            norm_stats, но они не предоставлены.
+        ValueError: If the selected normalization strategy requires
+            norm_stats but they are not provided.
 
     Examples:
     ---------------
@@ -127,7 +128,7 @@ class ChiscoDataset(Dataset):
         self.normalize = normalize
         self.augment_prob = augment_prob
         self.norm_stats = norm_stats
-        # Инициализация пустым списком, если None, для упрощения логики
+        # Initialize with an empty list when None to simplify logic.
         self.exclude_channels = exclude_channels if exclude_channels else []
         self.subject_mapping = subject_mapping if subject_mapping else {}
         self.unknown_subject_index = unknown_subject_index
@@ -136,11 +137,11 @@ class ChiscoDataset(Dataset):
         """
         Description:
         ---------------
-            Возвращает количество сэмплов в датасете.
+            Returns the number of samples in the dataset.
 
         Returns:
         ---------------
-            int: Количество элементов.
+            int: Number of items.
         """
         return len(self.samples)
 
@@ -148,38 +149,39 @@ class ChiscoDataset(Dataset):
         """
         Description:
         ---------------
-            Извлекает и обрабатывает один сэмпл по индексу.
-            Применяет нормализацию, исключение каналов и аугментацию.
+            Retrieves and processes one sample by index. Applies
+            normalization, channel exclusion, and augmentation.
 
         Args:
         ---------------
-            idx: Индекс сэмпла.
+            idx: Sample index.
 
         Returns:
         ---------------
-            Dict[str, Any]: Словарь с тензорами EEG, label, subject и text.
+            Dict[str, Any]: Dictionary with EEG, label, subject, and text
+            tensors/fields.
 
         Raises:
         ---------------
-            ValueError: Если статистика нормализации не найдена.
+            ValueError: If normalization statistics are not found.
         """
         sample = self.samples[idx]
         eeg = sample['eeg']
         label = sample['label']
 
-        # Убираем лишнее измерение, если оно есть (batch dim = 1)
+        # Remove the extra dimension if present (batch dim = 1).
         if eeg.ndim == 3 and eeg.shape[0] == 1:
             eeg = eeg.squeeze(0)
 
         eeg = eeg.astype(np.float32)
 
-        # Исключение шумных или нерабочих каналов
+        # Exclude noisy or inactive channels.
         if self.exclude_channels:
             keep_mask = np.ones(eeg.shape[0], dtype=bool)
             keep_mask[self.exclude_channels] = False
             eeg = eeg[keep_mask, :]
 
-        # Применение выбранной стратегии нормализации
+        # Apply the selected normalization strategy.
         if self.normalize == 'zscore':
             mean = eeg.mean(axis=-1, keepdims=True)
             std = eeg.std(axis=-1, keepdims=True) + EPSILON
@@ -191,22 +193,22 @@ class ChiscoDataset(Dataset):
         elif self.normalize == 'zscore_dataset_channel':
             if self.norm_stats is None:
                 raise ValueError(
-                    "Для 'zscore_dataset_channel' требуются `norm_stats`."
+                    "`norm_stats` are required for 'zscore_dataset_channel'."
                 )
             mean_c = self.norm_stats['mean'].reshape(-1, 1)
             std_c = (self.norm_stats['std'].reshape(-1, 1) + EPSILON)
             eeg = (eeg - mean_c) / std_c
         elif self.normalize == 'zscore_subject_channel':
-            # Нормализация по субъекту (устаревший метод, риск переобучения)
+            # Subject-level normalization (legacy method, overfitting risk).
             if self.norm_stats is None:
                 raise ValueError(
-                    "Для 'zscore_subject_channel' требуются `norm_stats`."
+                    "`norm_stats` are required for 'zscore_subject_channel'."
                 )
 
             subject_id = sample['subject']
             if subject_id not in self.norm_stats:
                 raise ValueError(
-                    f"Subject '{subject_id}' не найден в norm_stats."
+                    f"Subject '{subject_id}' was not found in norm_stats."
                 )
 
             mean_c, std_c = self.norm_stats[subject_id]
@@ -214,23 +216,23 @@ class ChiscoDataset(Dataset):
             std_c = (std_c.reshape(-1, 1) + EPSILON)
             eeg = (eeg - mean_c) / std_c
         elif self.normalize == 'zscore_hybrid':
-            # Гибридная нормализация: центрирование по субъекту,
-            # масштабирование по всему датасету
+            # Hybrid normalization: subject-level centering and
+            # dataset-level scaling.
             if self.norm_stats is None:
                 raise ValueError(
-                    "Для 'zscore_hybrid' требуются `norm_stats`."
+                    "`norm_stats` are required for 'zscore_hybrid'."
                 )
 
             subject_id = sample['subject']
             if ('mean_per_subject' not in self.norm_stats or
                     'std_global' not in self.norm_stats):
                 raise ValueError(
-                    "norm_stats должны содержать 'mean_per_subject' "
-                    "и 'std_global'."
+                    "norm_stats must contain 'mean_per_subject' and "
+                    "'std_global'."
                 )
 
-            # Если субъект отсутствует в train (LOSO/novel),
-            # используем нулевое центрирование
+            # If the subject is missing from train (LOSO/novel), use zero
+            # centering.
             if subject_id in self.norm_stats['mean_per_subject']:
                 mean_c = self.norm_stats['mean_per_subject'][subject_id]
             else:
@@ -245,14 +247,14 @@ class ChiscoDataset(Dataset):
             # Step 2: Global scaling
             eeg = eeg_centered / std_global
 
-        # Применение аугментации с заданной вероятностью
+        # Apply augmentation with the configured probability.
         if self.transform and np.random.rand() < self.augment_prob:
             eeg = self.transform(eeg)
 
         eeg_tensor = torch.from_numpy(eeg.copy())
         label_tensor = torch.tensor(label, dtype=torch.long)
 
-        # Конвертация subject_id в integer для embedding слоя
+        # Convert subject_id to an integer for the embedding layer.
         subject_id = sample['subject']
         # Unknown subjects are explicit. The model decides whether to reject
         # them or replace their embedding by a configured fallback.
@@ -274,21 +276,21 @@ class ChiscoSubset(Dataset):
     """
     Description:
     ---------------
-        Представляет собой подвыборку из основного `ChiscoDataset`.
-        Используется для создания train/val splits без копирования данных.
+        Represents a subset of the main `ChiscoDataset`. Used to create
+        train/val splits without copying data.
 
     Args:
     ---------------
-        dataset: Исходный датасет.
-        indices: Массив индексов для выборки.
+        dataset: Source dataset.
+        indices: Array of indices to select.
 
     Returns:
     ---------------
-        Объект Dataset, содержащий только указанные индексы.
+        Dataset object containing only the specified indices.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -300,35 +302,35 @@ class ChiscoSubset(Dataset):
     def __init__(self, dataset: ChiscoDataset, indices: np.ndarray):
         self.dataset = dataset
         self.indices = indices
-        # Кэширование сэмплов для быстрого доступа
+        # Cache samples for fast access.
         self.samples = [dataset.samples[i] for i in indices]
 
     def __len__(self) -> int:
-        """Возвращает размер подвыборки."""
+        """Returns the subset size."""
         return len(self.indices)
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         """
         Description:
         ---------------
-            Возвращает элемент по индексу в подвыборке.
+            Returns an item by index within the subset.
 
         Args:
         ---------------
-            idx: Индекс в пределах подвыборки.
+            idx: Index within the subset.
 
         Returns:
         ---------------
-            Dict[str, Any]: Сэмпл с добавлением sample_id.
+            Dict[str, Any]: Sample with an added sample_id.
         """
         item = self.dataset[self.indices[idx]]
-        # Добавляем идентификатор исходного образца для логгинга
+        # Add the source sample identifier for logging.
         item['sample_id'] = int(self.indices[idx])
         return item
 
 
 # =============================================================================
-# Функции загрузки и обработки данных
+# Data loading and processing functions
 # =============================================================================
 
 
@@ -336,12 +338,12 @@ def load_class_mapping(json_path: Path = JSON_DIR) -> Tuple[Dict[str, str], Dict
     """
     Description:
     ---------------
-        Загружает сопоставления классов из JSON-файлов.
-        Читает имена классов и маппинг текста в класс.
+        Loads class mappings from JSON files. Reads class names and
+        text-to-class mapping.
 
     Args:
     ---------------
-        json_path: Путь к директории с JSON файлами.
+        json_path: Path to the directory with JSON files.
 
     Returns:
     ---------------
@@ -349,8 +351,8 @@ def load_class_mapping(json_path: Path = JSON_DIR) -> Tuple[Dict[str, str], Dict
 
     Raises:
     ---------------
-        FileNotFoundError: Если файлы не найдены.
-        json.JSONDecodeError: Если формат JSON некорректен.
+        FileNotFoundError: If files are not found.
+        json.JSONDecodeError: If the JSON format is invalid.
 
     Examples:
     ---------------
@@ -374,23 +376,23 @@ def load_all_data(
     """
     Description:
     ---------------
-        Загружает все pkl-файлы для указанных испытуемых и задачи.
-        Итерируется по директориям субъектов и парсит файлы EEG.
+        Loads all PKL files for the specified subjects and task.
+        Iterates through subject directories and parses EEG files.
 
     Args:
     ---------------
-        data_dir: Корневая директория с данными.
-        subject_ids: Список идентификаторов субъектов для загрузки.
-        task: Тип задачи (например, "imagine").
-        verbose: Выводить ли прогресс в консоль.
+        data_dir: Root data directory.
+        subject_ids: List of subject identifiers to load.
+        task: Task type (for example, "imagine").
+        verbose: Whether to print progress to the console.
 
     Returns:
     ---------------
-        List[Dict]: Список загруженных сэмплов.
+        List[Dict]: List of loaded samples.
 
     Raises:
     ---------------
-        Нет явных исключений (ошибки логируются).
+        No explicit exceptions (errors are logged).
 
     Examples:
     ---------------
@@ -399,20 +401,20 @@ def load_all_data(
         100
     """
     if verbose:
-        print(f"Загрузка данных для испытуемых: {subject_ids}, задача: {task}")
+        print(f"Loading data for subjects: {subject_ids}, task: {task}")
     _, text_to_class = load_class_mapping()
     all_samples = []
     for subject_id in subject_ids:
         subject_dir = data_dir / subject_id / "eeg"
         if not subject_dir.exists():
             if verbose:
-                print(f"⚠️  {subject_id}: директория не найдена, пропуск.")
+                print(f"⚠️  {subject_id}: directory not found, skipping.")
             continue
         pkl_files = sorted(subject_dir.glob(f"*task-{task}*.pkl"))
         if verbose:
-            print(f"  {subject_id}: найдено {len(pkl_files)} файлов.")
+            print(f"  {subject_id}: found {len(pkl_files)} files.")
         for pkl_file in pkl_files:
-            # Парсинг ID запуска из имени файла
+            # Parse the run ID from the file name.
             run_id = pkl_file.stem.split("_run-")[1].split("_")[0]
             _ensure_numpy_pickle_compat()
             try:
@@ -421,9 +423,9 @@ def load_all_data(
             except (OSError, EOFError, pickle.UnpicklingError) as exc:
                 if verbose:
                     print(
-                        f"⚠️  {subject_id}: не удалось прочитать "
+                        f"⚠️  {subject_id}: failed to read "
                         f"{pkl_file.name}: {type(exc).__name__}: {exc}. "
-                        "Файл пропущен."
+                        "File skipped."
                     )
                 continue
             for item in data_list:
@@ -431,7 +433,7 @@ def load_all_data(
                 label = text_to_class.get(text, -1)
                 if label == -1:
                     if verbose:
-                        print(f"⚠️  Текст '{text}' не найден в textmaps.json.")
+                        print(f"⚠️  Text '{text}' was not found in textmaps.json.")
                     continue
                 all_samples.append({
                     'subject': subject_id,
@@ -441,7 +443,7 @@ def load_all_data(
                     'eeg': eeg
                 })
     if verbose:
-        print(f"✅ Всего загружено сэмплов: {len(all_samples)}")
+        print(f"✅ Total loaded samples: {len(all_samples)}")
     return all_samples
 
 
@@ -449,12 +451,12 @@ def load_metaclass_mapping(json_path: Path = JSON_DIR) -> Tuple[Dict[str, str], 
     """
     Description:
     ---------------
-        Загружает сопоставление из 39 исходных классов в 8 мета-классов.
-        Используется для задач классификации более высокого уровня.
+        Loads the mapping from 39 source classes to 8 meta-classes.
+        Used for higher-level classification tasks.
 
     Args:
     ---------------
-        json_path: Путь к директории с JSON файлами.
+        json_path: Path to the directory with JSON files.
 
     Returns:
     ---------------
@@ -462,7 +464,7 @@ def load_metaclass_mapping(json_path: Path = JSON_DIR) -> Tuple[Dict[str, str], 
 
     Raises:
     ---------------
-        FileNotFoundError: Если файл metaclasses.json не найден.
+        FileNotFoundError: If metaclasses.json is not found.
 
     Examples:
     ---------------
@@ -487,23 +489,23 @@ def load_all_data_metaclass(
     """
     Description:
     ---------------
-        Загружает все данные и преобразует метки в 8 мета-классов.
-        Обертка над load_all_data с дополнительной конвертацией лейблов.
+        Loads all data and converts labels to 8 meta-classes. Wrapper
+        around load_all_data with additional label conversion.
 
     Args:
     ---------------
-        data_dir: Корневая директория с данными.
-        subject_ids: Список идентификаторов субъектов.
-        task: Тип задачи.
-        verbose: Флаг вывода информации.
+        data_dir: Root data directory.
+        subject_ids: List of subject identifiers.
+        task: Task type.
+        verbose: Information output flag.
 
     Returns:
     ---------------
-        List[Dict]: Список сэмплов с обновленными метками.
+        List[Dict]: List of samples with updated labels.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -524,7 +526,7 @@ def load_all_data_metaclass(
             converted_samples.append(converted_sample)
     if verbose:
         print("\n" + "=" * 80)
-        print(f"Конвертация в мета-классы: {len(converted_samples)} сэмплов.")
+        print(f"Meta-class conversion: {len(converted_samples)} samples.")
         print("=" * 80 + "\n")
     return converted_samples
 
@@ -537,22 +539,22 @@ def get_stratified_cv_splits(
     """
     Description:
     ---------------
-        Создает стратифицированные K-Fold разрезы для кросс-валидации.
-        Сохраняет баланс классов в каждом фолде.
+        Creates stratified K-Fold splits for cross-validation.
+        Preserves class balance in each fold.
 
     Args:
     ---------------
-        labels: Массив меток классов.
-        n_splits: Количество разбиений (K).
-        random_state: Seed для воспроизводимости.
+        labels: Class label array.
+        n_splits: Number of splits (K).
+        random_state: Seed for reproducibility.
 
     Returns:
     ---------------
-        List[Tuple]: Список кортежей (train_idx, val_idx).
+        List[Tuple]: List of tuples (train_idx, val_idx).
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -577,25 +579,26 @@ def get_within_subject_cv_splits(
     """
     Description:
     ---------------
-        Создает within-subject K-Fold разрезы: каждый субъект отдельно
-        разбивается StratifiedKFold, затем fold-и объединяются по субъектам.
-        Это гарантирует, что каждый субъект присутствует и в train, и в val,
-        а обучаемые subject embeddings имеют train-наблюдения перед валидацией.
+        Creates within-subject K-Fold splits: each subject is split
+        separately with StratifiedKFold, then folds are merged across
+        subjects. This guarantees that each subject is present in both
+        train and val, and that trainable subject embeddings have training
+        observations before validation.
 
     Args:
     ---------------
-        samples: Список всех образцов данных.
-        labels: Массив меток классов.
-        n_splits: Количество fold-ов.
-        random_state: Seed для воспроизводимости.
+        samples: List of all data samples.
+        labels: Class label array.
+        n_splits: Number of folds.
+        random_state: Seed for reproducibility.
 
     Returns:
     ---------------
-        List[Tuple]: Список кортежей (train_idx, val_idx).
+        List[Tuple]: List of tuples (train_idx, val_idx).
 
     Raises:
     ---------------
-        ValueError: Если у субъекта недостаточно данных для stratified split.
+        ValueError: If a subject has insufficient data for stratified split.
     """
     subject_to_indices: Dict[str, List[int]] = {}
     for idx, sample in enumerate(samples):
@@ -615,7 +618,7 @@ def get_within_subject_cv_splits(
 
         if len(subject_indices) < n_splits or np.min(class_counts) < n_splits:
             raise ValueError(
-                f"Subject '{subject_id}' не поддерживает within_subject "
+                f"Subject '{subject_id}' does not support within_subject "
                 f"StratifiedKFold: n_samples={len(subject_indices)}, "
                 f"min_class_count={int(np.min(class_counts))}, "
                 f"n_splits={n_splits}."
@@ -652,25 +655,24 @@ def get_stratified_group_cv_splits(
     """
     Description:
     ---------------
-        Stratified K-Fold с группировкой по субъектам.
-        Гарантирует, что одна и та же группа (субъект) не будет
-        одновременно в train и val. Критично для оценки cross-subject
-        обобщаемости.
+        Stratified K-Fold grouped by subject. Guarantees that the same
+        group (subject) is not present in train and val at the same time.
+        Critical for evaluating cross-subject generalization.
 
     Args:
     ---------------
-        labels: np.ndarray [N] - мета-классы (0..7).
-        groups: np.ndarray [N] - subject_id indices (целые числа).
-        n_splits: int - число folds (по умолчанию 5).
-        random_state: int - seed для воспроизводимости.
+        labels: np.ndarray [N] - Meta-classes (0..7).
+        groups: np.ndarray [N] - subject_id indices (integers).
+        n_splits: int - Number of folds (default: 5).
+        random_state: int - Seed for reproducibility.
 
     Returns:
     ---------------
-        List[Tuple]: Стратифицированные разбиения с группировкой.
+        List[Tuple]: Stratified grouped splits.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -695,33 +697,34 @@ def get_loso_splits(
     """
     Description:
     ---------------
-        Leave-One-Subject-Out кросс-валидация.
-        Для каждого субъекта: Test - все сэмплы субъекта,
-        Train - все сэмплы остальных. Максимально строгая оценка.
+        Leave-One-Subject-Out cross-validation. For each subject:
+        Test contains all samples from that subject, and Train contains
+        all samples from the remaining subjects. This is the strictest
+        evaluation.
 
     Args:
     ---------------
-        samples: List[Dict] - список всех образцов данных.
-        subject_mapping: Dict[str, int] - маппинг subject_id -> index.
+        samples: List[Dict] - List of all data samples.
+        subject_mapping: Dict[str, int] - subject_id -> index mapping.
 
     Returns:
     ---------------
-        List[Tuple]: LOSO разбиения (train_idx, val_idx).
+        List[Tuple]: LOSO splits (train_idx, val_idx).
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
         >>> splits = get_loso_splits(samples, subject_mapping)
-        >>> print(f"LOSO: {len(splits)} разбиений для {len(subject_mapping)} субъектов")
+        >>> print(f"LOSO: {len(splits)} splits for {len(subject_mapping)} subjects")
     """
     unique_subjects = sorted(subject_mapping.keys())
     splits = []
 
     for test_subject in unique_subjects:
-        # Маска для выбора тестового субъекта
+        # Mask for selecting the test subject.
         test_mask = np.array([s['subject'] == test_subject for s in samples])
         test_idx = np.where(test_mask)[0]
         train_idx = np.where(~test_mask)[0]
@@ -738,14 +741,14 @@ def compute_channelwise_stats(
     """
     Description:
     ---------------
-        Вычисляет среднее и стандартное отклонение для каждого канала.
-        Используется для глобальной нормализации датасета.
+        Computes the mean and standard deviation for each channel.
+        Used for global dataset normalization.
 
     Args:
     ---------------
-        samples: Список всех образцов данных.
-        indices: Индексы образцов для вычисления статистики.
-        exclude_channels: Список индексов каналов для исключения.
+        samples: List of all data samples.
+        indices: Sample indices used to compute statistics.
+        exclude_channels: List of channel indices to exclude.
 
     Returns:
     ---------------
@@ -753,7 +756,7 @@ def compute_channelwise_stats(
 
     Raises:
     ---------------
-        ValueError: Если массив индексов пуст.
+        ValueError: If the index array is empty.
 
     Examples:
     ---------------
@@ -763,7 +766,7 @@ def compute_channelwise_stats(
     """
     exclude_channels = exclude_channels or []
     if len(indices) == 0:
-        raise ValueError("Массив индексов не может быть пустым.")
+        raise ValueError("The index array cannot be empty.")
 
     eeg0 = samples[indices[0]]['eeg'].squeeze(0)
     if exclude_channels:
@@ -790,7 +793,7 @@ def compute_channelwise_stats(
 
     mean_c = sum_c / count
     var_c = (sumsq_c / count) - (mean_c ** 2)
-    # Защита от отрицательной дисперсии из-за ошибок округления
+    # Protect against negative variance due to rounding errors.
     std_c = np.sqrt(np.maximum(var_c, 1e-12))
     return mean_c.astype(np.float32), std_c.astype(np.float32)
 
@@ -803,16 +806,16 @@ def compute_subjectwise_stats(
     """
     Description:
     ---------------
-        Вычисляет mean/std для каждого subject ОТДЕЛЬНО.
-        Группирует samples по subject_id и вычисляет channelwise
-        статистики для каждого subject независимо. Устраняет
-        subject baseline shifts (impedance, skull thickness).
+        Computes mean/std for each subject separately. Groups samples by
+        subject_id and computes channelwise statistics for each subject
+        independently. Removes subject baseline shifts (impedance, skull
+        thickness).
 
     Args:
     ---------------
-        samples: Список всех образцов данных.
-        indices: Индексы образцов для обучающей выборки.
-        exclude_channels: Список индексов каналов для исключения.
+        samples: List of all data samples.
+        indices: Sample indices for the training split.
+        exclude_channels: List of channel indices to exclude.
 
     Returns:
     ---------------
@@ -820,7 +823,7 @@ def compute_subjectwise_stats(
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -859,14 +862,14 @@ def compute_hybrid_stats(
     Description:
     ---------------
         HYBRID NORMALIZATION: Subject-wise centering + Global scaling.
-        Комбинация subject-wise и global normalization для максимизации
-        discriminative signal при минимизации subject baseline shifts.
+        Combination of subject-wise and global normalization to maximize
+        the discriminative signal while minimizing subject baseline shifts.
 
     Args:
     ---------------
-        samples: Список всех образцов данных.
-        indices: Индексы образцов для обучающей выборки.
-        exclude_channels: Список индексов каналов для исключения.
+        samples: List of all data samples.
+        indices: Sample indices for the training split.
+        exclude_channels: List of channel indices to exclude.
 
     Returns:
     ---------------
@@ -876,7 +879,7 @@ def compute_hybrid_stats(
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------

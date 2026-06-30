@@ -1,18 +1,17 @@
 # file: riemannian_utils.py
 # -*- coding: utf-8 -*-
 """
-Домен римановой геометрии: утилиты для обработки SPD матриц.
+Riemannian geometry domain: utilities for processing SPD matrices.
 
-Содержит функции для вычисления ковариаций (OAS, Ledoit-Wolf),
-логарифмического отображения (Log-Euclidean map), векторизации и других
-операций на многообразии симметричных положительно определенных (SPD)
-матриц. Также включает модуль для аугментации данных в касательном
-пространстве.
+Contains functions for covariance computation (OAS, Ledoit-Wolf),
+logarithmic mapping (Log-Euclidean map), vectorization, and other
+operations on the manifold of symmetric positive definite (SPD) matrices.
+Also includes a module for data augmentation in tangent space.
 
-Особенности реализации:
-- Полная поддержка GPU (CUDA) и CPU, включая fallback для MPS (Apple Silicon).
-- Робастная обработка численной нестабильности (регуляризация собственных значений).
-- Векторизованные операции для пакетной обработки (Batch processing).
+Implementation features:
+- Full GPU (CUDA) and CPU support, including fallback for MPS (Apple Silicon).
+- Robust numerical instability handling (eigenvalue regularization).
+- Vectorized operations for batch processing.
 """
 
 # =============================================================================
@@ -33,46 +32,46 @@ from config import EPSILON
 
 
 # =============================================================================
-# Базовые математические операции (Low-level Math)
+# Low-level math operations
 # =============================================================================
 
 def _eigh_cpu_fallback(A: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Description:
     ---------------
-        Надежная функция для собственного разложения (eigendecomposition).
-        Обрабатывает случаи, когда стандартный `torch.linalg.eigh` падает
-        на специфичных устройствах (MPS) или при низких точностях (float16).
+        Robust eigendecomposition helper. Handles cases where standard
+        `torch.linalg.eigh` fails on specific devices (MPS) or at low
+        precision (float16).
 
-        Логика работы:
-        1. Для MPS (Mac): переводит тензор на CPU, считает, возвращает обратно.
-        2. Для CUDA с float16/bfloat16: повышает точность до float32, считает,
-           приводит результат к исходному типу.
-        3. В остальных случаях использует нативный метод.
+        Logic:
+        1. For MPS (Mac): move the tensor to CPU, compute, then move back.
+        2. For CUDA with float16/bfloat16: promote to float32, compute,
+           then cast the result back to the original dtype.
+        3. Otherwise, use the native method.
 
     Args:
     ---------------
-        A: torch.Tensor - Симметричная матрица (или батч матриц).
+        A: torch.Tensor - Symmetric matrix (or batch of matrices).
 
     Returns:
     ---------------
         Tuple[torch.Tensor, torch.Tensor]:
-            - w: Собственные значения.
-            - V: Собственные векторы.
+            - w: Eigenvalues.
+            - V: Eigenvectors.
 
     Raises:
     ---------------
-        Нет явных исключений (ошибки делегируются вызывающему коду).
+        No explicit exceptions (errors are delegated to the caller).
 
     Examples:
     ---------------
         >>> A = torch.randn(4, 4)
-        >>> A = A @ A.t()  # Делаем симметричной
+        >>> A = A @ A.t()  # Make it symmetric
         >>> w, V = _eigh_cpu_fallback(A)
     """
     dev_type = A.device.type
 
-    # Обработка Apple Silicon (MPS)
+    # Apple Silicon (MPS) handling.
     if dev_type == 'mps':
         A_cpu = A.detach().to('cpu', dtype=torch.float32)
         w, V = torch.linalg.eigh(A_cpu)
@@ -81,13 +80,13 @@ def _eigh_cpu_fallback(A: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
             V.to(A.device, dtype=A.dtype)
         )
 
-    # Обработка низких точностей на CUDA
+    # Low-precision CUDA handling.
     if dev_type == 'cuda' and A.dtype in (torch.float16, torch.bfloat16):
         A32 = A.to(dtype=torch.float32)
         w, V = torch.linalg.eigh(A32)
         return w.to(dtype=A.dtype), V.to(dtype=A.dtype)
 
-    # Стандартный путь
+    # Standard path.
     return torch.linalg.eigh(A)
 
 
@@ -99,97 +98,97 @@ def _spd_eig_clamp_robust(
     """
     Description:
     ---------------
-        Гарантирует положительную определенность матрицы путем ограничения
-        собственных значений. Использует адаптивную стратегию с увеличением
-        регуляризации (jitter) и fallback на CPU с float64 в случае ошибок.
+        Guarantees positive definiteness by clamping eigenvalues. Uses an
+        adaptive strategy with increasing regularization (jitter) and a
+        CPU float64 fallback on errors.
 
-        Алгоритм:
-        1. Санитизация входных данных (замена NaN/Inf).
-        2. Симметризация.
-        3. Попытка разложения с начальным jitter.
-        4. При ошибке: попытка на CPU в float64.
-        5. При неудаче: увеличение jitter в 10 раз и повтор.
-        6. Полный провал: возврат диагональной матрицы.
+        Algorithm:
+        1. Sanitize input data (replace NaN/Inf).
+        2. Symmetrize.
+        3. Try decomposition with initial jitter.
+        4. On error: try CPU float64.
+        5. On failure: increase jitter by 10x and retry.
+        6. Complete failure: return a diagonal matrix.
 
     Args:
     ---------------
-        A: torch.Tensor - Входная симметричная матрица.
-        eps: float - Минимальное собственное значение (порог отсечки).
-        max_tries: int - Максимальное количество попыток увеличения jitter.
+        A: torch.Tensor - Input symmetric matrix.
+        eps: float - Minimum eigenvalue (clamping threshold).
+        max_tries: int - Maximum number of jitter escalation attempts.
 
     Returns:
     ---------------
-        torch.Tensor: SPD матрица той же размерности.
+        torch.Tensor: SPD matrix with the same dimensionality.
 
     Raises:
     ---------------
-        Нет явных исключений (возвращает аппроксимацию в худшем случае).
+        No explicit exceptions (returns an approximation in the worst case).
 
     Examples:
     ---------------
         >>> A = torch.randn(3, 3)
         >>> A_spd = _spd_eig_clamp_robust(A @ A.t(), eps=1e-6)
     """
-    # Санитизация: замена NaN и бесконечностей
+    # Sanitization: replace NaN and infinities.
     A = torch.nan_to_num(A, nan=0.0, posinf=1e6, neginf=-1e6)
 
-    # Принудительная симметризация (A = (A + A^T) / 2)
+    # Force symmetrization (A = (A + A^T) / 2).
     A = 0.5 * (A + A.transpose(-1, -2))
 
     n = A.size(-1)
     eye = torch.eye(n, device=A.device, dtype=A.dtype)
 
-    # Добавляем размерность батча к единичной матрице, если нужно
+    # Add a batch dimension to the identity matrix if needed.
     if A.dim() == 3:
         eye = eye.unsqueeze(0)
 
-    # Начальный jitter (число, не тензор, для избежания проблем типов)
+    # Initial jitter (number, not tensor, to avoid dtype issues).
     jitter = max(10.0 * eps, 1e-9)
     B = A + jitter * eye
 
     for i in range(max_tries):
         try:
-            # Основной путь: разложение на текущем устройстве
+            # Main path: decomposition on the current device.
             w, V = _eigh_cpu_fallback(B)
 
-            # Ограничение собственных значений снизу (clamp)
+            # Clamp eigenvalues from below.
             w = torch.clamp(w, min=float(eps))
 
-            # Реконструкция матрицы: V * diag(w) * V^T
-            # Используем broadcasting для умножения V на w
+            # Matrix reconstruction: V * diag(w) * V^T.
+            # Use broadcasting to multiply V by w.
             return (V * w.unsqueeze(-2)) @ V.transpose(-1, -2)
 
         except Exception:
-            # Fallback на CPU только при критической ошибке
+            # CPU fallback only on critical error.
             if A.device.type != 'cpu':
                 try:
-                    # Попытка в двойной точности на CPU
+                    # Try double precision on CPU.
                     B64 = B.detach().to('cpu', dtype=torch.float64)
                     w64, V64 = torch.linalg.eigh(B64)
                     w64 = torch.clamp(w64, min=float(eps))
 
-                    # Возврат в исходный формат
+                    # Return to the original format.
                     V = V64.to(device=A.device, dtype=A.dtype)
                     w = w64.to(device=A.device, dtype=A.dtype)
                     return (V * w.unsqueeze(-2)) @ V.transpose(-1, -2)
                 except Exception:
                     pass
 
-            # Эскалация: увеличение jitter в 10 раз
+            # Escalation: increase jitter by 10x.
             scale = (10.0 ** (i + 1)) * eps
             B = A + scale * eye
 
-    # Критический случай: возврат диагональной матрицы
+    # Critical case: return a diagonal matrix.
     print(
-        "⚠️  ПРЕДУПРЕЖДЕНИЕ: _spd_eig_clamp_robust не сошелся. "
-        "Используется диагональ."
+        "⚠️  WARNING: _spd_eig_clamp_robust did not converge. "
+        "Using the diagonal."
     )
     diag = torch.diagonal(A, dim1=-2, dim2=-1).abs().clamp(min=eps)
     return torch.diag_embed(diag)
 
 
 # =============================================================================
-# Основные римановы утилиты (Core Riemannian Utilities)
+# Core Riemannian utilities
 # =============================================================================
 
 def window_signal(
@@ -200,23 +199,24 @@ def window_signal(
     """
     Description:
     ---------------
-        Разбивает сигнал на перекрывающиеся окна (sliding window).
-        Преобразует временной ряд в последовательность сегментов для
-        последующего вычисления ковариационных матриц.
+        Splits the signal into overlapping windows (sliding window).
+        Converts the time series into a segment sequence for subsequent
+        covariance matrix computation.
 
     Args:
     ---------------
-        x: torch.Tensor [B, C, T] - Входной сигнал (Batch, Channels, Time).
-        window: int - Размер окна в отсчетах.
-        stride: int - Шаг скольжения окна.
+        x: torch.Tensor [B, C, T] - Input signal (Batch, Channels, Time).
+        window: int - Window size in samples.
+        stride: int - Window stride.
 
     Returns:
     ---------------
-        torch.Tensor [B, L, C, window] - Тензор окон, где L - число окон.
+        torch.Tensor [B, L, C, window] - Window tensor, where L is the
+            number of windows.
 
     Raises:
     ---------------
-        ValueError: Если размер окна больше длины сигнала.
+        ValueError: If the window size is larger than the signal length.
 
     Examples:
     ---------------
@@ -229,13 +229,13 @@ def window_signal(
 
     if window > T:
         raise ValueError(
-            f"Окно ({window}) больше длины сигнала ({T})."
+            f"Window ({window}) is larger than the signal length ({T})."
         )
 
-    # Вычисление количества окон
+    # Compute the number of windows.
     L = 1 + (T - window) // stride
 
-    # Генерация окон через list comprehension (эффективно для GPU)
+    # Generate windows through list comprehension (efficient on GPU).
     xs = [
         x[:, :, i * stride:i * stride + window]
         for i in range(L)
@@ -252,29 +252,28 @@ def cov_shrinkage_oas(
     """
     Description:
     ---------------
-        Оценка ковариационной матрицы с использованием метода
-        Oracle Approximating Shrinkage (OAS).
-        OAS обеспечивает лучшую оценку ковариации для малых выборок
-        по сравнению с выборочной ковариацией, уменьшая дисперсию оценки
-        за счет смещения к целевой матрице (масштабированной единичной).
+        Covariance matrix estimation using the Oracle Approximating
+        Shrinkage (OAS) method. OAS provides a better covariance estimate
+        for small samples than sample covariance by reducing estimate
+        variance through shrinkage toward the target matrix (scaled identity).
 
-        Формула:
+        Formula:
         Sigma_OAS = (1 - alpha) * S + alpha * mu * I
-        где alpha вычисляется аналитически для минимизации MSE.
+        where alpha is computed analytically to minimize MSE.
 
     Args:
     ---------------
-        x: torch.Tensor [B, C, T] - Центрированный сигнал.
-        eps: float - Регуляризатор для численной стабильности.
-        min_alpha: float - Нижняя граница коэффициента сжатия (alpha).
+        x: torch.Tensor [B, C, T] - Centered signal.
+        eps: float - Regularizer for numerical stability.
+        min_alpha: float - Lower bound for the shrinkage coefficient (alpha).
 
     Returns:
     ---------------
-        torch.Tensor [B, C, C] - Робастная SPD ковариационная матрица.
+        torch.Tensor [B, C, C] - Robust SPD covariance matrix.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -285,33 +284,33 @@ def cov_shrinkage_oas(
     """
     B, C, T = x.shape
 
-    # Централизация данных (вычитание среднего по времени)
+    # Center data (subtract the time mean).
     x = x - x.mean(dim=-1, keepdim=True)
 
-    # Выборочная ковариация: S = (1/(T-1)) * X * X^T
+    # Sample covariance: S = (1/(T-1)) * X * X^T.
     cov = (x @ x.transpose(-1, -2)) / (T - 1)
 
-    # Добавление небольшой регуляризации перед вычислением весов
+    # Add small regularization before computing weights.
     eye = torch.eye(C, device=x.device, dtype=x.dtype).unsqueeze(0)
     cov = cov + eps * eye
 
-    # Вычисление следов для формулы OAS
+    # Compute traces for the OAS formula.
     trace_cov = cov.diagonal(dim1=-2, dim2=-1).sum(dim=-1)
     trace_cov2 = (cov ** 2).sum(dim=(-1, -2))
 
-    mu = trace_cov / C  # Среднее значение собственных значений
+    mu = trace_cov / C  # Mean eigenvalue.
 
-    # Числитель и знаменатель для оптимального alpha (формула OAS)
+    # Numerator and denominator for the optimal alpha (OAS formula).
     num = trace_cov2 + mu ** 2
     den = (T - 1) * (trace_cov2 - (trace_cov ** 2) / C) + 1e-6
 
-    # Вычисление alpha с ограничением диапазона [min_alpha, 1.0]
+    # Compute alpha with the [min_alpha, 1.0] range constraint.
     alpha = (num / den).clamp(min_alpha, 1.0).unsqueeze(-1).unsqueeze(-1)
 
-    # Формирование сжатой оценки
+    # Build the shrunk estimate.
     shrunk = (1 - alpha) * cov + alpha * mu.view(B, 1, 1) * eye
 
-    # Финальная гарантия SPD через ограничение собственных значений
+    # Final SPD guarantee through eigenvalue clamping.
     return _spd_eig_clamp_robust(shrunk, eps=eps)
 
 
@@ -322,12 +321,12 @@ def cov_shrinkage_ledoit_wolf(
     """
     Description:
     ---------------
-        Оценка ковариации методом Ledoit–Wolf (закрытая форма).
-        Альтернатива OAS, использующая другую эвристику для подбора
-        коэффициента сжатия. Хорошо работает, когда истинная ковариация
-        близка к скалярной матрице.
+        Covariance estimation with the Ledoit-Wolf method (closed form).
+        Alternative to OAS that uses a different heuristic for selecting
+        the shrinkage coefficient. Works well when the true covariance is
+        close to a scalar matrix.
 
-        Формулы:
+        Formulas:
         - S = (1/T) X X^T
         - mu = tr(S)/C
         - alpha = clip(phi_hat / gamma_hat, 0, 1)
@@ -335,16 +334,16 @@ def cov_shrinkage_ledoit_wolf(
 
     Args:
     ---------------
-        x: torch.Tensor [B, C, T] - Входной сигнал.
-        eps: float - Регуляризатор.
+        x: torch.Tensor [B, C, T] - Input signal.
+        eps: float - Regularizer.
 
     Returns:
     ---------------
-        torch.Tensor [B, C, C] - SPD ковариационная матрица.
+        torch.Tensor [B, C, C] - SPD covariance matrix.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -353,34 +352,34 @@ def cov_shrinkage_ledoit_wolf(
     """
     B, C, T = x.shape
 
-    # Централизация
+    # Centering.
     x = x - x.mean(dim=-1, keepdim=True)
 
     eye = torch.eye(C, device=x.device, dtype=x.dtype).unsqueeze(0)
 
-    # Sample covariance (нормировка на T, а не T-1, как в классике LW)
+    # Sample covariance (normalized by T, not T-1 as in classic LW).
     S = (x @ x.transpose(-1, -2)) / T
-    S = 0.5 * (S + S.transpose(-1, -2))  # Симметризация
+    S = 0.5 * (S + S.transpose(-1, -2))  # Symmetrization
 
     mu = S.diagonal(dim1=-2, dim2=-1).sum(dim=-1) / C  # [B]
 
-    # Вычисление phi_hat (оценка дисперсии ошибок)
-    # E[x_i^2 x_j^2] приближается через выборочное среднее произведений квадратов
+    # Compute phi_hat (error variance estimate).
+    # E[x_i^2 x_j^2] is approximated through the sample mean of square products.
     X2 = x.pow(2)
     E_mat = (X2 @ X2.transpose(-1, -2)) / T  # [B, C, C]
     S_sq = S.pow(2)
     phi_mat = E_mat - S_sq
     phi_hat = (phi_mat.sum(dim=(-1, -2)) / T).clamp(min=0.0)  # [B]
 
-    # Вычисление gamma_hat (квадрат нормы отклонения от целевой матрицы)
+    # Compute gamma_hat (squared norm of deviation from the target matrix).
     # gamma_hat = ||S - mu I||_F^2
     S_muI = S - mu.view(B, 1, 1) * eye
     gamma_hat = S_muI.pow(2).sum(dim=(-1, -2)).clamp(min=1e-12)
 
-    # Коэффициент сжатия
+    # Shrinkage coefficient.
     alpha = (phi_hat / gamma_hat).clamp(0.0, 1.0).view(B, 1, 1)
 
-    # Итоговая оценка
+    # Final estimate.
     Sigma = (1 - alpha) * S + alpha * mu.view(B, 1, 1) * eye
     Sigma = Sigma + eps * eye
 
@@ -391,25 +390,25 @@ def spd_logm(A: torch.Tensor, eps: float = EPSILON) -> torch.Tensor:
     """
     Description:
     ---------------
-        Логарифмическое отображение для SPD матриц (Log-Euclidean map).
-        Проецирует матрицу из риманова многообразия в касательное
-        пространство (евклидово пространство симметричных матриц).
+        Logarithmic mapping for SPD matrices (Log-Euclidean map).
+        Projects a matrix from the Riemannian manifold into tangent space
+        (Euclidean space of symmetric matrices).
 
-        Вычисляется через спектральное разложение:
+        Computed through spectral decomposition:
         Log(A) = V * diag(log(w_i)) * V^T
 
     Args:
     ---------------
-        A: torch.Tensor [B, C, C] - SPD матрица.
-        eps: float - Минимальное собственное значение для логарифма.
+        A: torch.Tensor [B, C, C] - SPD matrix.
+        eps: float - Minimum eigenvalue for the logarithm.
 
     Returns:
     ---------------
-        torch.Tensor [B, C, C] - Матрица в касательном пространстве.
+        torch.Tensor [B, C, C] - Matrix in tangent space.
 
     Raises:
     ---------------
-        Нет явных исключений (fallback на диагональ при ошибке).
+        No explicit exceptions (diagonal fallback on error).
 
     Examples:
     ---------------
@@ -425,8 +424,8 @@ def spd_logm(A: torch.Tensor, eps: float = EPSILON) -> torch.Tensor:
         return (V * logw.unsqueeze(-2)) @ V.transpose(-1, -2)
     except Exception:
         print(
-            "⚠️  ПРЕДУПРЕЖДЕНИЕ: spd_logm не сошелся. "
-            "Используется диагональ."
+            "⚠️  WARNING: spd_logm did not converge. "
+            "Using the diagonal."
         )
         diag = torch.diagonal(A, dim1=-2, dim2=-1).clamp(min=eps)
         return torch.diag_embed(torch.log(diag))
@@ -436,21 +435,21 @@ def spd_vectorize(A: torch.Tensor) -> torch.Tensor:
     """
     Description:
     ---------------
-        Векторизует симметричную матрицу, извлекая элементы
-        верхнего треугольника (включая диагональ).
-        Уменьшает размерность с C*C до C*(C+1)/2.
+        Vectorizes a symmetric matrix by extracting upper-triangular
+        elements (including the diagonal). Reduces dimensionality from
+        C*C to C*(C+1)/2.
 
     Args:
     ---------------
-        A: torch.Tensor [B, C, C] - Симметричная матрица.
+        A: torch.Tensor [B, C, C] - Symmetric matrix.
 
     Returns:
     ---------------
-        torch.Tensor [B, C*(C+1)/2] - Вектор признаков.
+        torch.Tensor [B, C*(C+1)/2] - Feature vector.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -460,7 +459,7 @@ def spd_vectorize(A: torch.Tensor) -> torch.Tensor:
         torch.Size([1, 6])
     """
     B, C, _ = A.shape
-    # Получаем индексы верхнего треугольника
+    # Get upper-triangular indices.
     iu = torch.triu_indices(C, C, offset=0, device=A.device)
     return A[:, iu[0], iu[1]]
 
@@ -472,46 +471,46 @@ def spd_correlation_from_cov(
     """
     Description:
     ---------------
-        Преобразует ковариационную матрицу в корреляционную.
-        Нормализует ковариацию стандартными отклонениями:
-        Corr = D^{-1/2} * Cov * D^{-1/2}, где D = diag(Cov).
+        Converts a covariance matrix to a correlation matrix. Normalizes
+        covariance by standard deviations:
+        Corr = D^{-1/2} * Cov * D^{-1/2}, where D = diag(Cov).
 
     Args:
     ---------------
-        cov: torch.Tensor [B, C, C] - Ковариационная матрица.
-        eps: float - Регуляризатор для избежания деления на ноль.
+        cov: torch.Tensor [B, C, C] - Covariance matrix.
+        eps: float - Regularizer to avoid division by zero.
 
     Returns:
     ---------------
-        torch.Tensor [B, C, C] - Корреляционная матрица (SPD).
+        torch.Tensor [B, C, C] - Correlation matrix (SPD).
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
         >>> cov = torch.randn(2, 3, 3)
-        >>> cov = cov @ cov.transpose(-1, -2)  # Делаем SPD
+        >>> cov = cov @ cov.transpose(-1, -2)  # Make SPD
         >>> corr = spd_correlation_from_cov(cov)
     """
-    # Извлечение диагонали (дисперсии)
+    # Extract the diagonal (variances).
     diag = torch.diagonal(cov, dim1=-2, dim2=-1)
 
-    # Вычисление обратного квадратного корня (1 / std)
-    # Защита от малых значений через 10*eps
+    # Compute inverse square root (1 / std).
+    # Protect against small values through 10*eps.
     inv_sqrt = diag.clamp(min=10.0 * eps).rsqrt()
 
-    # Формирование диагональной матрицы D^{-1/2}
+    # Build diagonal matrix D^{-1/2}.
     Dm12 = torch.diag_embed(inv_sqrt)
 
-    # Преобразование: D^{-1/2} * Cov * D^{-1/2}
+    # Transform: D^{-1/2} * Cov * D^{-1/2}.
     corr = Dm12 @ cov @ Dm12
 
-    # Принудительная симметризация (на случай численных ошибок)
+    # Force symmetrization in case of numerical errors.
     corr = 0.5 * (corr + corr.transpose(-1, -2))
 
-    # Регуляризация
+    # Regularization.
     eye = torch.eye(corr.size(-1), device=corr.device, dtype=corr.dtype)
     if corr.dim() == 3:
         eye = eye.unsqueeze(0)
@@ -521,37 +520,37 @@ def spd_correlation_from_cov(
 
 
 # =============================================================================
-# Аугментация на SPD многообразии (SPD Augmentation)
+# SPD manifold augmentation
 # =============================================================================
 
 class TangentSpaceJittering(nn.Module):
     """
     Description:
     ---------------
-        Аугментация данных путем добавления гауссовского шума в
-        касательном пространстве (Log-Euclidean domain).
+        Data augmentation by adding Gaussian noise in tangent space
+        (Log-Euclidean domain).
 
-        Алгоритм:
-        1. Логарифмическое отображение: C -> Log(C).
-        2. Добавление симметричного гауссовского шума.
-        3. Экспоненциальное отображение: Log(C_noisy) -> C_augmented.
+        Algorithm:
+        1. Logarithmic mapping: C -> Log(C).
+        2. Add symmetric Gaussian noise.
+        3. Exponential mapping: Log(C_noisy) -> C_augmented.
 
-        Это позволяет генерировать валидные SPD матрицы, сохраняя
-        геометрическую структуру многообразия.
+        This enables generation of valid SPD matrices while preserving the
+        geometric structure of the manifold.
 
     Args:
     ---------------
-        noise_std: float - Стандартное отклонение шума.
-        prob: float - Вероятность применения аугментации.
-        eps: float - Регуляризатор для логарифма.
+        noise_std: float - Noise standard deviation.
+        prob: float - Probability of applying augmentation.
+        eps: float - Regularizer for the logarithm.
 
     Returns:
     ---------------
-        torch.Tensor: Аугментированная SPD матрица.
+        torch.Tensor: Augmented SPD matrix.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
@@ -575,33 +574,33 @@ class TangentSpaceJittering(nn.Module):
         """
         Description:
         ---------------
-            Применяет аугментацию к входной ковариационной матрице.
-            Работает только в режиме обучения (self.training).
+            Applies augmentation to the input covariance matrix.
+            Works only in training mode (self.training).
 
         Args:
         ---------------
-            C: torch.Tensor [B, C, C] - Входная SPD матрица.
+            C: torch.Tensor [B, C, C] - Input SPD matrix.
 
         Returns:
         ---------------
-            torch.Tensor [B, C, C] - Аугментированная матрица.
+            torch.Tensor [B, C, C] - Augmented matrix.
         """
-        # Пропуск, если не режим обучения или выпало случайное число > prob
+        # Skip if not in training mode or if the random draw is > prob.
         if not self.training or torch.rand(1).item() > self.prob:
             return C
 
-        # Переход в касательное пространство
+        # Move into tangent space.
         log_C = spd_logm(C, eps=self.eps)
 
-        # Генерация симметричного шума
+        # Generate symmetric noise.
         noise = torch.randn_like(log_C) * self.noise_std
         noise = (noise + noise.transpose(-2, -1)) / 2.0
 
-        # Добавление шума
+        # Add noise.
         log_C_noisy = log_C + noise
 
-        # Экспоненциальное отображение обратно в многообразие
-        # Через спектральное разложение: exp(V * diag(lambdas) * V^T)
+        # Exponential mapping back to the manifold.
+        # Through spectral decomposition: exp(V * diag(lambdas) * V^T).
         eigval, eigvec = _eigh_cpu_fallback(log_C_noisy)
         return (
             eigvec @

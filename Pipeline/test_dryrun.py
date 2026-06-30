@@ -1,19 +1,20 @@
 # file: test_dryrun.py
 # -*- coding: utf-8 -*-
 """
-Dry-run тест для валидации модификаций Subject-Wise Normalization.
+Dry-run test for validating Subject-Wise Normalization changes.
 
-Запускает 1 epoch обучения для проверки:
-1. Корректности вычисления subject-wise stats (среднее/STD по субъектам).
-2. Отсутствия ошибок в data loading (загрузка pkl, нормализация).
-3. Совместимости с существующей архитектурой модели (Subject Embeddings).
-4. Прохождения полного шага обучения (forward, backward, optimizer step).
+Runs 1 training epoch to verify:
+1. Correct subject-wise stats computation (per-subject mean/STD).
+2. Error-free data loading (PKL loading, normalization).
+3. Compatibility with the existing model architecture (Subject Embeddings).
+4. Completion of a full training step (forward, backward, optimizer step).
 
-Использование:
+Usage:
     python test_dryrun.py
 
-Ожидаемый результат:
-    Успешное завершение скрипта без исключений и вывод метрик за 1 epoch.
+Expected result:
+    The script finishes successfully without exceptions and prints metrics
+    for 1 epoch.
 """
 
 # =============================================================================
@@ -30,7 +31,7 @@ import torch
 # =============================================================================
 # Local Imports
 # =============================================================================
-# Добавляем корневую директорию проекта в путь поиска модулей
+# Add the project root directory to the module search path.
 sys.path.insert(0, str(Path(__file__).parent))
 
 from config import default_config
@@ -48,10 +49,10 @@ def main() -> None:
     """
     Description:
     ---------------
-        Запускает процесс dry-run тестирования: обучает модель в течение
-        1 эпохи на небольших данных для проверки целостности пайплайна.
-        Проверяет совместимость всех компонентов: загрузчика данных,
-        модели, функции потерь и оптимизатора.
+        Runs the dry-run testing process: trains the model for 1 epoch
+        on a small amount of data to validate pipeline integrity.
+        Checks compatibility across the data loader, model, loss function,
+        and optimizer.
 
     Returns:
     ---------------
@@ -59,20 +60,20 @@ def main() -> None:
 
     Raises:
     ---------------
-        Exception: Любое необработанное исключение прервет тест и укажет
-            на проблему в конфигурации или коде.
+        Exception: Any unhandled exception interrupts the test and points
+            to a configuration or code issue.
 
     Examples:
     ---------------
-        >>> # Запуск из командной строки:
+        >>> # Run from the command line:
         >>> # python test_dryrun.py
-        >>> # Ожидается вывод: "DRY-RUN COMPLETE ✅"
+        >>> # Expected output: "DRY-RUN COMPLETE ✅"
     """
     # =========================================================================
-    # Конфигурация
+    # Configuration
     # =========================================================================
     cfg = default_config()
-    # DRY-RUN: ограничиваем обучение одним эпoхом для скорости
+    # DRY-RUN: limit training to one epoch for speed.
     cfg['training']['n_epochs'] = 1
 
     print("\n" + "=" * 80)
@@ -80,14 +81,14 @@ def main() -> None:
     print("=" * 80)
     pretty_print_run(cfg)
 
-    # Установка seed для воспроизводимости результатов
+    # Set the seed for result reproducibility.
     set_seed(cfg['seed'])
     device = torch.device(cfg['device'])
 
     # =========================================================================
-    # Шаг 1: Загрузка данных
+    # Step 1: Data loading
     # =========================================================================
-    print("\n[1/5] Загрузка данных...")
+    print("\n[1/5] Loading data...")
     train_loader, val_loader, train_labels, n_channels, n_subjects = (
         build_loaders(cfg)
     )
@@ -96,53 +97,53 @@ def main() -> None:
     print(f"✅ Effective channels: {n_channels}")
 
     # =========================================================================
-    # Шаг 2: Инициализация модели
+    # Step 2: Model initialization
     # =========================================================================
-    print("\n[2/5] Создание модели...")
+    print("\n[2/5] Creating model...")
     model = build_model(cfg, n_channels, n_subjects).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"✅ Model parameters: {n_params:,}")
 
     # =========================================================================
-    # Шаг 3: Инициализация критерия и оптимизатора
+    # Step 3: Criterion and optimizer initialization
     # =========================================================================
-    print("\n[3/5] Создание criterion и optimizer...")
+    print("\n[3/5] Creating criterion and optimizer...")
     criterion = build_criterion(cfg, train_labels).to(device)
     optimizer, scheduler = build_optimizer_and_scheduler(model, cfg)
     print(f"✅ Criterion: {type(criterion).__name__}")
     print(f"✅ Optimizer: {type(optimizer).__name__}")
 
     # =========================================================================
-    # Шаг 4: Запуск обучения (1 epoch)
+    # Step 4: Run training (1 epoch)
     # =========================================================================
-    print("\n[4/5] Запуск 1 epoch обучения...")
+    print("\n[4/5] Running 1 training epoch...")
     model.train()
     total_loss = 0.0
 
-    # Проверка наличия флага использования эмбеддингов субъектов
+    # Check whether subject embeddings are enabled.
     use_subject_embed = (
         hasattr(model, 'use_subject_embed') and model.use_subject_embed
     )
 
     for i, batch in enumerate(train_loader):
-        # Перемещение данных на устройство (GPU/CPU)
+        # Move data to the device (GPU/CPU).
         eeg = batch['eeg'].to(device)
         labels = batch['label'].to(device)
 
         optimizer.zero_grad(set_to_none=True)
 
-        # Формирование аргументов для модели в зависимости от конфигурации
+        # Build model arguments depending on configuration.
         if use_subject_embed:
             subject_ids = batch['subject_id'].to(device)
             logits = model(eeg, subject_ids=subject_ids)
         else:
             logits = model(eeg)
 
-        # Вычисление потерь и обратное распространение
+        # Compute loss and run backpropagation.
         loss = criterion(logits, labels)
         loss.backward()
 
-        # Градиентный клиппинг для стабильности обучения
+        # Gradient clipping for training stability.
         torch.nn.utils.clip_grad_norm_(
             model.parameters(),
             cfg['training']['grad_clip']
@@ -151,7 +152,7 @@ def main() -> None:
 
         total_loss += loss.item()
 
-        # Логирование прогресса каждые 100 батчей
+        # Log progress every 100 batches.
         if (i + 1) % 100 == 0:
             print(f"  Batch {i+1}/{len(train_loader)}: Loss = {loss.item():.4f}")
 
@@ -159,9 +160,9 @@ def main() -> None:
     print(f"\n✅ Epoch 1 Train Loss: {avg_train_loss:.4f}")
 
     # =========================================================================
-    # Шаг 5: Валидация
+    # Step 5: Validation
     # =========================================================================
-    print("\n[5/5] Оценка на валидации...")
+    print("\n[5/5] Evaluating on validation...")
     val_metrics, _, _ = evaluate_with_outputs(
         model,
         val_loader,
@@ -174,12 +175,12 @@ def main() -> None:
     print(f"✅ Val F1-macro: {val_metrics['f1_macro']:.4f}")
 
     # =========================================================================
-    # Завершение
+    # Completion
     # =========================================================================
     print("\n" + "=" * 80)
-    print("DRY-RUN COMPLETE ✅ — Все компоненты работают корректно!")
+    print("DRY-RUN COMPLETE ✅ — All components are working correctly!")
     print("=" * 80)
-    print("\nГотов к запуску полного обучения (50 epochs).")
+    print("\nReady to run full training (50 epochs).")
 
 
 if __name__ == '__main__':

@@ -1,14 +1,14 @@
 # file: utils.py
 # -*- coding: utf-8 -*-
 """
-Общие вспомогательные утилиты.
+Shared helper utilities.
 
-Содержит функции, не привязанные к конкретному домену, такие как:
-1. Установка seed для воспроизводимости экспериментов (PyTorch, NumPy, CUDA).
-2. Обеспечение совместимости версий NumPy при десериализации pickle-файлов.
-3. Форматированный вывод метрик и конфигурации запуска в консоль.
+Contains functions that are not tied to a specific domain, such as:
+1. Setting seeds for experiment reproducibility (PyTorch, NumPy, CUDA).
+2. Ensuring NumPy version compatibility when deserializing pickle files.
+3. Formatted console output for metrics and run configuration.
 
-Эти утилиты используются во всех скриптах обучения и тестирования.
+These utilities are used across all training and testing scripts.
 """
 
 # =============================================================================
@@ -28,19 +28,19 @@ def _ensure_numpy_pickle_compat() -> None:
     """
     Description:
     ---------------
-        Обеспечивает совместимость при десериализации pickle-файлов NumPy,
-        созданных в старых версиях библиотеки.
+        Ensures compatibility when deserializing NumPy pickle files
+        created by older library versions.
         
-        Проблема: В новых версиях NumPy (>=1.25) модуль `numpy.core` был
-        перемещен в `numpy._core`. Старые pickle-файлы могут ссылаться на
-        старый путь, что вызывает ошибку при загрузке.
+        Problem: In newer NumPy versions (>=1.25), the `numpy.core`
+        module was moved to `numpy._core`. Older pickle files may still
+        reference the old path, which causes loading failures.
         
-        Решение: Создается алиас в `sys.modules`, позволяющий найти новый
-        модуль по старому имени.
+        Solution: Create an alias in `sys.modules` so the new module can
+        be found by its old name.
 
     Args:
     ---------------
-        Нет аргументов.
+        No arguments.
 
     Returns:
     ---------------
@@ -48,23 +48,23 @@ def _ensure_numpy_pickle_compat() -> None:
 
     Raises:
     ---------------
-        Нет явных исключений (ошибки импорта игнорируются).
+        No explicit exceptions (import errors are ignored).
 
     Examples:
     ---------------
         >>> _ensure_numpy_pickle_compat()
-        >>> # Теперь можно безопасно загружать старые pickle с массивами
+        >>> # Old pickle files with arrays can now be loaded safely.
     """
     try:
-        # Попытка импорта нового пути (NumPy >= 1.25)
+        # Try the new path first (NumPy >= 1.25).
         import numpy._core  # noqa: F401
     except ImportError:
         try:
-            # Если новый путь не найден, пробуем старый и создаем алиас
+            # If the new path is missing, try the old one and create an alias.
             import numpy.core as ncore
             sys.modules['numpy._core'] = ncore
         except ImportError:
-            # Если ничего не найдено, пропускаем (возможно, очень старая версия)
+            # If neither path exists, skip it (possibly a very old version).
             pass
 
 
@@ -72,19 +72,18 @@ def set_seed(seed: int) -> None:
     """
     Description:
     ---------------
-        Устанавливает фиксированный seed (зерно) для всех генераторов
-        случайных чисел в проекте. Это критически важно для обеспечения
-        воспроизводимости результатов экспериментов.
+        Sets a fixed seed for all random number generators in the
+        project. This is critical for experiment reproducibility.
         
-        Инициализирует:
+        Initializes:
         - PyTorch CPU RNG.
-        - PyTorch CUDA RNG (для всех GPU).
+        - PyTorch CUDA RNG (for all GPUs).
         - NumPy RNG.
-        - Настройки cuDNN для детерминированных алгоритмов.
+        - cuDNN settings for deterministic algorithms.
 
     Args:
     ---------------
-        seed: int - Целочисленное значение зерна.
+        seed: int - Integer seed value.
 
     Returns:
     ---------------
@@ -92,27 +91,27 @@ def set_seed(seed: int) -> None:
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
         >>> set_seed(42)
-        >>> # Все последующие случайные операции будут детерминированы
+        >>> # All subsequent random operations will be deterministic.
     """
     torch.manual_seed(seed)
     
-    # Установка seed для всех GPU
+    # Set the seed for all GPUs.
     torch.cuda.manual_seed_all(seed)
     
-    # Установка seed для NumPy
+    # Set the NumPy seed.
     np.random.seed(seed)
     
-    # Настройка cuDNN для детерминизма
-    # deterministic=True гарантирует одинаковые результаты, но может быть медленнее
+    # Configure cuDNN for determinism.
+    # deterministic=True guarantees identical results, but may be slower.
     torch.backends.cudnn.deterministic = True
     
-    # benchmark=False отключает поиск оптимального алгоритма свертки
-    # (который может быть недетерминированным)
+    # benchmark=False disables the search for the optimal convolution
+    # algorithm, which may be nondeterministic.
     torch.backends.cudnn.benchmark = False
 
 
@@ -120,13 +119,14 @@ def print_metrics(metrics: Dict[str, float], prefix: str = "") -> None:
     """
     Description:
     ---------------
-        Красиво выводит словарь с метриками в консоль в формате "ключ: значение".
-        Значения форматируются до 4 знаков после запятой.
+        Prints a metrics dictionary to the console in "key: value" format.
+        Values are formatted to 4 decimal places.
 
     Args:
     ---------------
-        metrics: Dict[str, float] - Словарь метрик (например, {'accuracy': 0.95}).
-        prefix: str - Префикс, добавляемый к заголовку вывода (опционально).
+        metrics: Dict[str, float] - Metrics dictionary (for example,
+            {'accuracy': 0.95}).
+        prefix: str - Prefix added to the output header (optional).
 
     Returns:
     ---------------
@@ -134,17 +134,17 @@ def print_metrics(metrics: Dict[str, float], prefix: str = "") -> None:
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
 
     Examples:
     ---------------
         >>> metrics = {'loss': 0.12345, 'acc': 0.98765}
         >>> print_metrics(metrics, prefix="Val")
-        Val Метрики:
+        Val Metrics:
           loss: 0.1235
           acc: 0.9877
     """
-    print(f"\n{prefix} Метрики:")
+    print(f"\n{prefix} Metrics:")
     for key, value in metrics.items():
         print(f"  {key}: {value:.4f}")
 
@@ -153,13 +153,13 @@ def pretty_print_run(cfg: Dict[str, Any]) -> None:
     """
     Description:
     ---------------
-        Выводит ключевые параметры конфигурации запуска в читаемом виде.
-        Используется для быстрой проверки настроек эксперимента перед стартом.
-        Группирует параметры по категориям: Данные, Модель, Обучение, Оптимизация.
+        Prints key run configuration parameters in a readable format.
+        Used for a quick check of experiment settings before startup.
+        Groups parameters by category: data, model, training, optimization.
 
     Args:
     ---------------
-        cfg: Dict[str, Any] - Полный словарь конфигурации проекта.
+        cfg: Dict[str, Any] - Full project configuration dictionary.
 
     Returns:
     ---------------
@@ -167,19 +167,20 @@ def pretty_print_run(cfg: Dict[str, Any]) -> None:
 
     Raises:
     ---------------
-        KeyError: Если в конфиге отсутствуют ожидаемые ключи ('data', 'model' и т.д.).
+        KeyError: If the configuration is missing expected keys
+            ('data', 'model', etc.).
 
     Examples:
     ---------------
         >>> cfg = default_config()
         >>> pretty_print_run(cfg)
         ==================================================
-        Конфигурация запуска Phase 4B
+        Phase 4B run configuration
         ==================================================
-        Данные: 5 испытуемых, нормализация: zscore_hybrid
+        Data: 5 subjects, normalization: zscore_hybrid
         ...
     """
-    # Извлечение основных секций конфига для краткости
+    # Extract the main config sections for brevity.
     data_cfg = cfg['data']
     model_cfg = cfg['model']
     train_cfg = cfg['training']
@@ -188,35 +189,35 @@ def pretty_print_run(cfg: Dict[str, Any]) -> None:
     loss_cfg = cfg['loss']
 
     print("\n" + "=" * 50)
-    print("Конфигурация запуска Phase 4B")
+    print("Phase 4B run configuration")
     print("=" * 50)
     
-    # Блок данных
+    # Data block.
     n_subjects = len(data_cfg['subject_ids'])
     norm_type = data_cfg['normalize']
-    print(f"Данные: {n_subjects} испытуемых, нормализация: {norm_type}")
+    print(f"Data: {n_subjects} subjects, normalization: {norm_type}")
     
-    # Блок модели
+    # Model block.
     d_model = model_cfg['d_model']
     n_layers = model_cfg['n_layers']
-    print(f"Модель: rtt_ms, d_model={d_model}, слоев={n_layers}")
+    print(f"Model: rtt_ms, d_model={d_model}, layers={n_layers}")
     
-    # Блок обучения
+    # Training block.
     n_epochs = train_cfg['n_epochs']
     batch_size = train_cfg['batch_size']
     lr = train_cfg['learning_rate']
     print(
-        f"Обучение: {n_epochs} эпох, batch_size={batch_size}, "
+        f"Training: {n_epochs} epochs, batch_size={batch_size}, "
         f"lr={lr:.0e}"
     )
     
-    # Блок оптимизации
+    # Optimization block.
     sch_name = sched_cfg['name']
     opt_name = opt_cfg['name']
     loss_type = loss_cfg['type']
     print(
-        f"Планировщик: {sch_name}, Оптимизатор: {opt_name}, "
-        f"Потери: {loss_type}"
+        f"Scheduler: {sch_name}, Optimizer: {opt_name}, "
+        f"Loss: {loss_type}"
     )
     
     print("=" * 50)

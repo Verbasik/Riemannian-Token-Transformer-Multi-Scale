@@ -1,69 +1,69 @@
 # -*- coding: utf-8 -*-
 """
-Конфигурация для эксперимента Phase 4B.
+Configuration for the Phase 4B experiment.
 
-Файл централизует:
-    - Пути к данным
-    - Гиперпараметры модели
-    - Настройки обучения
-    - Настройки кросс-валидации
-    - Параметры оптимизатора и scheduler
+This file centralizes:
+    - Data paths
+    - Model hyperparameters
+    - Training settings
+    - Cross-validation settings
+    - Optimizer and scheduler parameters
 """
 
 # =============================================================================
-# Стандартная библиотека
+# Standard library
 # =============================================================================
 import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 # =============================================================================
-# Сторонние библиотеки
+# Third-party libraries
 # =============================================================================
 import torch
 
 # =============================================================================
-# Глобальные константы
+# Global constants
 # =============================================================================
 
 PROJECT_ROOT: Path = Path(__file__).parent.parent
-# Корневая директория проекта (на уровень выше папки config)
+# Project root directory (one level above the config folder)
 
 DATA_ROOT: Path = PROJECT_ROOT
-# Базовая директория данных
+# Base data directory
 
 JSON_DIR: Path = DATA_ROOT / "json"
-# Папка с JSON-описаниями датасетов
+# Directory with JSON dataset descriptions
 
 PREPROCESSED_DIR: Path = Path("/mnt/data/EEG/preprocessed_pkl")
-# Legacy-путь к предварительно обработанным данным
+# Legacy path to preprocessed data
 
 RANDOM_SEED: int = 42
-# Фиксация seed для воспроизводимости
+# Fixed seed for reproducibility
 
 EPSILON: float = 1e-4
-# Численная константа для стабильности вычислений
+# Numerical constant for computational stability
 
 
 # =============================================================================
-# Вспомогательная функция
+# Helper function
 # =============================================================================
 def _resolve_preprocessed_dir() -> Path:
     """
     Description:
     ---------------
-        Определяет существующую директорию с preprocessed pkl-файлами.
+        Resolves an existing directory with preprocessed PKL files.
 
     Returns:
     ---------------
-        Path: Найденный путь к данным.
+        Path: Resolved data path.
     """
     env_dir: Optional[str] = os.getenv("EEG_PREPROCESSED_DIR")
 
     candidates = []
 
     if env_dir:
-        candidates.append(Path(env_dir))  # Приоритет переменной окружения
+        candidates.append(Path(env_dir))  # Environment variable priority
 
     candidates.extend(
         [
@@ -82,21 +82,21 @@ def _resolve_preprocessed_dir() -> Path:
 
 
 # =============================================================================
-# Основная функция конфигурации
+# Main configuration function
 # =============================================================================
 def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
     """
     Description:
     ---------------
-        Формирует словарь конфигурации эксперимента Phase 4B.
+        Builds the configuration dictionary for the Phase 4B experiment.
 
     Args:
     ---------------
-        device_hint: Подсказка устройства ('cuda' или 'cpu').
+        device_hint: Device hint ('cuda' or 'cpu').
 
     Returns:
     ---------------
-        Dict[str, Any]: Конфигурация эксперимента.
+        Dict[str, Any]: Experiment configuration.
     """
     use_cuda: bool = torch.cuda.is_available() and (
         (device_hint or "cuda") == "cuda"
@@ -108,205 +108,205 @@ def default_config(device_hint: Optional[str] = None) -> Dict[str, Any]:
     return {
         "data": {
             "data_dir": data_dir,
-            # Путь к preprocessed данным
+            # Path to preprocessed data
 
             "subject_ids": [
                 "sub-01", "sub-02", "sub-03", "sub-04", "sub-05"
             ],
-            # Список идентификаторов субъектов для обучения/оценки
+            # Subject identifiers used for training/evaluation
 
             "task": "imagine",
-            # Тип задачи (например: imagine / overt / rest)
+            # Task type (for example: imagine / overt / rest)
 
             "normalize": "zscore_hybrid",
-            # Метод нормализации входных данных
+            # Input data normalization method
 
             "exclude_channels": [124],
-            # Индексы каналов EEG, исключаемых из анализа
+            # EEG channel indices excluded from analysis
         },
         "model": {
             "n_channels": 125,
-            # Общее количество входных EEG-каналов
+            # Total number of input EEG channels
 
             "n_classes": 8,
-            # Количество целевых классов классификации
+            # Number of target classification classes
 
             "proj_channels": 24,
-            # Размерность проекционного слоя перед attention
+            # Projection layer dimensionality before attention
 
             "window_size_small": 128,
-            # Размер малого временного окна (в сэмплах)
+            # Small temporal window size (in samples)
 
             "stride_small": 96,
-            # Шаг скольжения малого окна
+            # Small-window stride
 
             "window_size_large": 256,
-            # Размер большого временного окна
+            # Large temporal window size
 
             "stride_large": 128,
-            # Шаг скольжения большого окна
+            # Large-window stride
 
             "d_model": 128,
-            # Размерность скрытого представления Transformer
+            # Transformer hidden representation dimensionality
 
             "n_heads": 4,
-            # Количество attention-голов в Transformer
+            # Number of attention heads in the Transformer
 
             "ff_dim": 256,
-            # Размерность feed-forward слоя
+            # Feed-forward layer dimensionality
 
             "n_layers": 2,
-            # Количество Transformer-блоков
+            # Number of Transformer blocks
 
             "dropout": 0.1,
-            # Dropout для регуляризации модели
+            # Dropout for model regularization
 
             "eps": EPSILON,
-            # Константа для численной стабильности
+            # Constant for numerical stability
 
             "attn_heads": 1,
-            # Количество attention-голов в covariance-модуле
+            # Number of attention heads in the covariance module
 
             "cov_type": "corr",
-            # Тип ковариационной матрицы ('cov' или 'corr')
+            # Covariance matrix type ('cov' or 'corr')
 
             "oas_min_alpha": 0.1,
-            # Минимальное значение shrinkage для OAS
+            # Minimum OAS shrinkage value
 
             "use_subject_embed": True,
-            # Использовать ли embedding субъекта
+            # Whether to use subject embeddings
 
             "subject_embed_dim": 16,
-            # Размерность embedding-вектора субъекта
+            # Subject embedding vector dimensionality
 
             "subject_embed_dropout": 0.2,
-            # Dropout для subject embedding
+            # Dropout for subject embedding
 
             "unknown_subject_policy": "auto",
-            # Поведение для subject-held-out validation:
+            # Behavior for subject-held-out validation:
             # auto / error / zero / mean
         },
         "training": {
             "n_epochs": 50,
-            # Максимальное количество эпох обучения
+            # Maximum number of training epochs
 
             "batch_size": 16 if device == "cuda" else 8,
-            # Размер батча (увеличен для GPU)
+            # Batch size (larger on GPU)
 
             "learning_rate": 3e-4,
-            # Начальная скорость обучения
+            # Initial learning rate
 
             "weight_decay": 1e-4,
-            # L2-регуляризация весов
+            # L2 weight regularization
 
             "early_stopping_patience": 8,
-            # Количество эпох без улучшения до остановки
+            # Number of epochs without improvement before stopping
 
             "use_amp": device == "cuda",
-            # Использовать ли mixed precision
+            # Whether to use mixed precision
 
             "grad_clip": 1.0,
-            # Ограничение нормы градиента
+            # Gradient norm clipping limit
 
             "num_workers": 0,
-            # Количество worker-процессов DataLoader.
-            # Данные уже загружены в память; на Python 3.14 forkserver
-            # пытается pickle-ить большой dataset и может падать.
+            # Number of DataLoader worker processes.
+            # The data is already loaded into memory; on Python 3.14,
+            # forkserver tries to pickle the large dataset and may fail.
 
             "pin_memory": device == "cuda",
-            # Закреплять ли память (ускоряет передачу на GPU)
+            # Whether to pin memory (speeds up GPU transfers)
 
             "persistent_workers": False,
-            # Сохранять worker-процессы между эпохами
+            # Whether to keep worker processes alive between epochs
 
             "prefetch_factor": 4 if device == "cuda" else 2,
-            # Количество предварительно загружаемых батчей
+            # Number of prefetched batches
 
             "allow_multiprocessing_dataloader": False,
-            # Разрешить num_workers > 0. Для Python 3.14 по умолчанию
-            # выключено из-за forkserver + большого in-memory dataset.
+            # Allow num_workers > 0. Disabled by default on Python 3.14
+            # because of forkserver and the large in-memory dataset.
         },
         "cv": {
             "protocol": "within_subject",
-            # Протокол оценки:
-            # within_subject: каждый субъект есть в train и val
-            # subject_heldout: val-субъекты полностью отсутствуют в train
+            # Evaluation protocol:
+            # within_subject: each subject is present in train and val
+            # subject_heldout: validation subjects are absent from train
 
             "n_splits": 5,
-            # Количество фолдов в кросс-валидации
+            # Number of cross-validation folds
 
             "random_state": RANDOM_SEED,
-            # Seed для разбиения на фолды
+            # Seed for fold splitting
 
             "mode": "within_subject",
-            # Режим CV:
+            # CV mode:
             # within_subject / stratified / stratified_group / loso
 
             "fold_index": 0,
-            # Индекс конкретного фолда
+            # Specific fold index
         },
         "evaluation": {
             "pipeline": "both",
-            # Полный evaluation pipeline:
+            # Full evaluation pipeline:
             # si: Subject-Independent pooled personalized model
             # sd: Subject-Dependent per-subject models
-            # both: последовательно запустить si и sd
+            # both: run si and sd sequentially
 
             "si_use_subject_embed": True,
-            # SI использует одну общую модель и subject embeddings.
+            # SI uses one shared model and subject embeddings.
 
             "sd_use_subject_embed": False,
-            # SD обучает отдельную модель на каждого субъекта; embedding
-            # субъекта по умолчанию отключен, т.к. персонализация задается
-            # самой отдельной моделью.
+            # SD trains a separate model for each subject; subject
+            # embedding is disabled by default because personalization
+            # is provided by the separate model itself.
         },
         "optimizer": {
             "name": "adamw",
-            # Тип оптимизатора
+            # Optimizer type
 
             "betas": [0.9, 0.999],
-            # Параметры momentum для AdamW
+            # Momentum parameters for AdamW
 
             "subject_embed_weight_decay": 5e-4,
-            # Отдельная регуляризация для embedding субъекта
+            # Separate regularization for subject embeddings
         },
         "scheduler": {
             "name": "cosine",
-            # Тип scheduler
+            # Scheduler type
 
             "T_max": 20,
-            # Период косинусного scheduler
+            # Cosine scheduler period
 
             "warmup_epochs": 3,
-            # Количество эпох warmup
+            # Number of warmup epochs
         },
         "loss": {
             "type": "cb_focal",
-            # Тип функции потерь
+            # Loss function type
 
             "beta": 0.999,
-            # Параметр балансировки классов
+            # Class balancing parameter
 
             "gamma": 1.75,
-            # Параметр фокусировки в Focal Loss
+            # Focusing parameter in Focal Loss
         },
         "logging": {
             "save_attn": False,
-            # Сохранять ли attention-веса при валидации
+            # Whether to save attention weights during validation
         },
         "seed": RANDOM_SEED,
-        # Общий seed эксперимента
+        # Global experiment seed
 
         "device": device,
-        # Устройство вычислений ('cpu' или 'cuda')
+        # Compute device ('cpu' or 'cuda')
 
         "checkpoint_dir": (
             f"Train/checkpoints/phase4b_5subjects_{device.upper()}"
         ),
-        # Директория сохранения чекпоинтов
+        # Checkpoint output directory
 
         "results_dir": (
             f"Train/results/phase4b_5subjects_{device.upper()}"
         ),
-        # Директория сохранения результатов эксперимента
+        # Experiment results output directory
     }

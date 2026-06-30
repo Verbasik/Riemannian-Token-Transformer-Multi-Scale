@@ -1,15 +1,15 @@
 # file: train.py
 # -*- coding: utf-8 -*-
 """
-Точка входа обучения Phase 4B с логгингом артефактов для анализа.
+Phase 4B training entry point with artifact logging for analysis.
 
-Этот скрипт orchestrates весь процесс обучения:
-1. Загрузка и предобработка данных (Subject-Wise Normalization).
-2. Настройка кросс-валидации (Stratified, Grouped, LOSO).
-3. Инициализация модели, критерия потерь и оптимизатора.
-4. Запуск тренировочного цикла с сохранением метрик и артефактов.
+This script orchestrates the full training process:
+1. Data loading and preprocessing (Subject-Wise Normalization).
+2. Cross-validation setup (Stratified, Grouped, LOSO).
+3. Model, loss criterion, and optimizer initialization.
+4. Training loop execution with metrics and artifact saving.
 
-Использование:
+Usage:
     python train.py [--save-attn]
 """
 
@@ -55,14 +55,14 @@ from utils import pretty_print_run, print_metrics, set_seed
 
 
 # =============================================================================
-# Builders (Компоненты сборки пайплайна)
+# Builders (pipeline assembly components)
 # =============================================================================
 
 def _subjects_for_indices(
     samples: List[Dict[str, Any]],
     indices: np.ndarray
 ) -> set:
-    """Возвращает множество subject IDs для заданных индексов."""
+    """Returns the set of subject IDs for the specified indices."""
     return {samples[int(idx)]['subject'] for idx in indices}
 
 
@@ -70,8 +70,8 @@ def _resolve_cv_protocol(cfg: Dict[str, Any]) -> Tuple[str, str]:
     """
     Description:
     ---------------
-        Нормализует пару (protocol, mode) и валидирует методологический
-        смысл выбранной оценки.
+        Normalizes the (protocol, mode) pair and validates the
+        methodological meaning of the selected evaluation.
 
     Returns:
     ---------------
@@ -116,13 +116,13 @@ def _resolve_unknown_subject_policy(
     """
     Description:
     ---------------
-        Преобразует policy='auto' в явное поведение:
-        - within_subject: error, потому что unseen subject является ошибкой.
-        - subject_heldout: zero, потому что val subject отсутствует в train.
+        Converts policy='auto' into explicit behavior:
+        - within_subject: error, because an unseen subject is an error.
+        - subject_heldout: zero, because the val subject is absent from train.
 
     Returns:
     ---------------
-        str: Разрешенная policy ('error', 'zero' или 'mean').
+        str: Resolved policy ('error', 'zero', or 'mean').
     """
     model_cfg = cfg.setdefault('model', {})
     policy = model_cfg.get('unknown_subject_policy', 'auto')
@@ -147,29 +147,29 @@ def build_loaders(
     """
     Description:
     ---------------
-        Создает DataLoaders для обучения и валидации с учетом выбранной
-        стратегии кросс-валидации и нормализации.
-        Поддерживает протоколы:
-        - within_subject: субъект присутствует и в train, и в val.
-        - subject_heldout: val-субъекты полностью отсутствуют в train.
-        Вычисляет статистику нормализации только на train-части (preventing leakage).
+        Creates DataLoaders for training and validation according to the
+        selected cross-validation and normalization strategy.
+        Supports protocols:
+        - within_subject: the subject is present in both train and val.
+        - subject_heldout: validation subjects are completely absent from train.
+        Computes normalization statistics only on the train split to prevent leakage.
 
     Args:
     ---------------
-        cfg: Dict[str, Any] - Конфигурационный словарь.
+        cfg: Dict[str, Any] - Configuration dictionary.
 
     Returns:
     ---------------
         Tuple[DataLoader, DataLoader, np.ndarray, int, int]:
-            - train_loader: DataLoader для обучающей выборки.
-            - val_loader: DataLoader для валидационной выборки.
-            - train_labels: Метки обучающей выборки (для взвешивания потерь).
-            - effective_channels: Количество каналов после исключения.
-            - n_subjects: Количество train-субъектов в embedding table.
+            - train_loader: DataLoader for the training split.
+            - val_loader: DataLoader for the validation split.
+            - train_labels: Training labels (for loss weighting).
+            - effective_channels: Number of channels after exclusion.
+            - n_subjects: Number of train subjects in the embedding table.
 
     Raises:
     ---------------
-        ValueError: Если режим CV неизвестен или если получен пустой fold.
+        ValueError: If the CV mode is unknown or an empty fold is produced.
 
     Examples:
     ---------------
@@ -178,7 +178,7 @@ def build_loaders(
         >>> len(loaders)
         5
     """
-    # Загрузка данных с конвертацией в мета-классы
+    # Load data with conversion to meta-classes.
     samples = load_all_data_metaclass(
         data_dir=cfg['data']['data_dir'],
         subject_ids=cfg['data']['subject_ids'],
@@ -189,7 +189,7 @@ def build_loaders(
     subject_mapping_all = create_subject_mapping(samples)
 
     # =========================================================================
-    # Выбор стратегии кросс-валидации (Subject-Aware CV)
+    # Select cross-validation strategy (Subject-Aware CV).
     # =========================================================================
     cv_protocol, cv_mode = _resolve_cv_protocol(cfg)
     splits: List[Tuple[np.ndarray, np.ndarray]] = []
@@ -204,11 +204,11 @@ def build_loaders(
             )
             print(
                 "✅ CV Protocol: within_subject "
-                "(каждый субъект есть в train и val)"
+                "(each subject is present in train and val)"
             )
         else:
-            # Backward-compatible mixed-subject split. Это не LOSO:
-            # subject embeddings обучаются на train-части тех же субъектов.
+            # Backward-compatible mixed-subject split. This is not LOSO:
+            # subject embeddings are trained on the train portion of the same subjects.
             splits = get_stratified_cv_splits(
                 labels,
                 cfg['cv']['n_splits'],
@@ -246,23 +246,23 @@ def build_loaders(
         splits = get_loso_splits(samples, subject_mapping_all)
         print(
             f"🔐 CV Protocol: subject_heldout + LOSO "
-            f"{len(splits)} разбиений)"
+            f"({len(splits)} splits)"
         )
 
     else:
         raise ValueError(f"Unknown CV mode: {cv_mode}.")
 
-    # Выбор конкретного fold для текущего запуска
+    # Select the specific fold for this run.
     fold_index = int(cfg.get('cv', {}).get('fold_index', 0))
     fold_index = max(0, min(fold_index, len(splits) - 1))
     train_idx, val_idx = splits[fold_index]
 
-    # Валидация непустоты разрезов
+    # Validate non-empty splits.
     if len(train_idx) == 0 or len(val_idx) == 0:
         raise ValueError(
-            f"Пустой fold: train={len(train_idx)}, val={len(val_idx)}. "
+            f"Empty fold: train={len(train_idx)}, val={len(val_idx)}. "
             f"cv_mode={cv_mode}, n_samples={len(labels)}. "
-            "Проверьте режим CV и число субъектов в запуске."
+            "Check the CV mode and the number of subjects in the run."
         )
 
     print(
@@ -304,7 +304,7 @@ def build_loaders(
     subject_mapping = create_subject_mapping(samples, train_idx)
     n_subjects = len(subject_mapping)
 
-    # Mapping строится только по train, поэтому held-out subjects получают -1.
+    # Mapping is built only on train, so held-out subjects receive -1.
     dataset = ChiscoDataset(
         samples=samples,
         normalize=cfg['data']['normalize'],
@@ -314,7 +314,7 @@ def build_loaders(
     )
 
     # =========================================================================
-    # Вычисление статистики нормализации (только на Train!)
+    # Compute normalization statistics (train only).
     # =========================================================================
     norm_mode = cfg['data']['normalize']
     exclude_ch = cfg['data'].get('exclude_channels')
@@ -327,24 +327,24 @@ def build_loaders(
         )
 
     if norm_mode == 'zscore_hybrid':
-        # Гибридная нормализация: центрирование по субъекту, скейлинг глобальный
+        # Hybrid normalization: subject-level centering, global scaling.
         dataset.norm_stats = compute_hybrid_stats(
             samples, train_idx, exclude_ch
         )
     elif norm_mode == 'zscore_subject_channel':
-        # Полная нормализация по каждому субъекту отдельно
+        # Full normalization for each subject separately.
         dataset.norm_stats = compute_subjectwise_stats(
             samples, train_idx, exclude_ch
         )
     elif norm_mode == 'zscore_dataset_channel':
-        # Глобальная нормализация по всему датасету
+        # Global normalization over the whole dataset.
         mean_c, std_c = compute_channelwise_stats(
             samples, train_idx, exclude_ch
         )
         dataset.norm_stats = {'mean': mean_c, 'std': std_c}
 
     # =========================================================================
-    # Конфигурация DataLoader
+    # DataLoader configuration.
     # =========================================================================
     num_workers = int(cfg['training']['num_workers'])
     if (
@@ -353,9 +353,9 @@ def build_loaders(
         not cfg['training'].get('allow_multiprocessing_dataloader', False)
     ):
         print(
-            "⚠️  DataLoader multiprocessing отключён: Python 3.14 "
-            "использует forkserver, который pickle-ит большой in-memory "
-            "dataset и может падать с pickle data was truncated. "
+            "⚠️  DataLoader multiprocessing disabled: Python 3.14 "
+            "uses forkserver, which pickles the large in-memory dataset "
+            "and may fail with pickle data was truncated. "
             "Set training.allow_multiprocessing_dataloader=True to override."
         )
         num_workers = 0
@@ -366,7 +366,7 @@ def build_loaders(
         'pin_memory': cfg['training']['pin_memory'],
     }
 
-    # Дополнительные параметры для многопроцессной загрузки
+    # Additional parameters for multiprocessing loading.
     if num_workers > 0:
         loader_common['persistent_workers'] = bool(
             cfg['training'].get('persistent_workers', True)
@@ -375,7 +375,7 @@ def build_loaders(
         if prefetch_factor > 0:
             loader_common['prefetch_factor'] = prefetch_factor
 
-    # Создание подвыборок и DataLoader
+    # Create subsets and DataLoaders.
     train_loader = DataLoader(
         ChiscoSubset(dataset, train_idx),
         shuffle=True,
@@ -387,7 +387,7 @@ def build_loaders(
         **loader_common,
     )
 
-    # Определение эффективного количества каналов
+    # Determine the effective number of channels.
     eeg_shape = dataset[int(train_idx[0])]['eeg'].shape
     effective_channels = eeg_shape[0]
 
@@ -402,22 +402,22 @@ def build_model(
     """
     Description:
     ---------------
-        Инициализирует модель RTTMultiScale на основе конфигурации.
-        Автоматически подставляет размеры входных данных и количество субъектов.
+        Initializes the RTTMultiScale model from configuration.
+        Automatically fills input dimensions and number of subjects.
 
     Args:
     ---------------
-        cfg: Dict[str, Any] - Конфигурация модели.
-        n_channels: int - Количество каналов EEG.
-        n_subjects: int - Количество субъектов (для Embedding слоя).
+        cfg: Dict[str, Any] - Model configuration.
+        n_channels: int - Number of EEG channels.
+        n_subjects: int - Number of subjects (for the Embedding layer).
 
     Returns:
     ---------------
-        nn.Module: Инициализированная модель.
+        nn.Module: Initialized model.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
     """
     m = cfg['model']
     unknown_subject_policy = m.get('unknown_subject_policy_resolved')
@@ -457,21 +457,21 @@ def build_criterion(
     """
     Description:
     ---------------
-        Создает функцию потерь.
-        Поддерживает Class-Balanced Focal Loss для работы с дисбалансом классов.
+        Creates the loss function. Supports Class-Balanced Focal Loss for
+        handling class imbalance.
 
     Args:
     ---------------
-        cfg: Dict[str, Any] - Конфигурация функции потерь.
-        train_labels: np.ndarray - Метки обучающей выборки (для подсчета весов).
+        cfg: Dict[str, Any] - Loss function configuration.
+        train_labels: np.ndarray - Training labels (for computing weights).
 
     Returns:
     ---------------
-        nn.Module: Функция потерь.
+        nn.Module: Loss function.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
     """
     loss_cfg = cfg['loss']
     if loss_cfg['type'] == 'cb_focal':
@@ -494,25 +494,25 @@ def build_optimizer_and_scheduler(
     """
     Description:
     ---------------
-        Настраивает оптимизатор и планировщик скорости обучения.
-        Реализует дифференцированный Weight Decay для эмбеддингов субъектов
-        (обычно меньший WD для эмбеддингов улучшает обобщаемость).
-        Поддерживает Warmup + Cosine Annealing.
+        Configures the optimizer and learning-rate scheduler.
+        Implements differentiated Weight Decay for subject embeddings
+        (usually lower WD for embeddings improves generalization).
+        Supports Warmup + Cosine Annealing.
 
     Args:
     ---------------
-        model: nn.Module - Модель для оптимизации.
-        cfg: Dict[str, Any] - Конфигурация оптимизатора и scheduler.
+        model: nn.Module - Model to optimize.
+        cfg: Dict[str, Any] - Optimizer and scheduler configuration.
 
     Returns:
     ---------------
         Tuple[Optimizer, Scheduler]:
-            - Optimizer: Настроенный оптимизатор (Adam/AdamW).
-            - Scheduler: Планировщик LR (или None).
+            - Optimizer: Configured optimizer (Adam/AdamW).
+            - Scheduler: LR scheduler (or None).
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
     """
     opt_cfg = cfg['optimizer']
     train_cfg = cfg['training']
@@ -520,7 +520,7 @@ def build_optimizer_and_scheduler(
     params_subject: List[nn.Parameter] = []
     params_other: List[nn.Parameter] = []
 
-    # Разделение параметров: эмбеддинги субъектов vs остальные веса
+    # Split parameters: subject embeddings vs other weights.
     if getattr(model, 'use_subject_embed', False):
         for name, param in model.named_parameters():
             if not param.requires_grad:
@@ -534,7 +534,7 @@ def build_optimizer_and_scheduler(
             p for p in model.parameters() if p.requires_grad
         ]
 
-    # Получение коэффициента WD для эмбеддингов (может отличаться от основного)
+    # Get the WD coefficient for embeddings (may differ from the main one).
     subject_wd = opt_cfg.get(
         'subject_embed_weight_decay',
         train_cfg['weight_decay']
@@ -552,7 +552,7 @@ def build_optimizer_and_scheduler(
             'weight_decay': subject_wd
         })
 
-    # Инициализация оптимизатора
+    # Optimizer initialization.
     if opt_cfg['name'] == 'adamw':
         optimizer = torch.optim.AdamW(
             param_groups,
@@ -565,7 +565,7 @@ def build_optimizer_and_scheduler(
             lr=train_cfg['learning_rate']
         )
 
-    # Инициализация планировщика (Scheduler)
+    # Scheduler initialization.
     sched_cfg = cfg['scheduler']
     scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None
 
@@ -579,19 +579,19 @@ def build_optimizer_and_scheduler(
         warmup_epochs = int(sched_cfg.get('warmup_epochs', 0))
 
         if warmup_epochs > 0:
-            # Линейный разогрев (Warmup)
+            # Linear warmup.
             sched_warmup = LinearLR(
                 optimizer,
                 start_factor=0.1,
                 total_iters=warmup_epochs
             )
-            # Косинусное затухание (Cosine Decay)
+            # Cosine decay.
             t_max = max(sched_cfg['T_max'] - warmup_epochs, 1)
             sched_cosine = CosineAnnealingLR(
                 optimizer,
                 T_max=t_max
             )
-            # Последовательное объединение
+            # Sequential composition.
             scheduler = SequentialLR(
                 optimizer,
                 schedulers=[sched_warmup, sched_cosine],
@@ -614,17 +614,17 @@ def parse_args() -> argparse.Namespace:
     """
     Description:
     ---------------
-        Парсит аргументы командной строки.
+        Parses command-line arguments.
 
     Returns:
     ---------------
-        argparse.Namespace: Объект с аргументами.
+        argparse.Namespace: Argument object.
     """
     parser = argparse.ArgumentParser(description="Train Phase 4B")
     parser.add_argument(
         '--save-attn',
         action='store_true',
-        help='Сохранять усреднённые attention веса на валидации'
+        help='Save averaged attention weights on validation'
     )
     return parser.parse_args()
 
@@ -633,31 +633,30 @@ def main(cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Description:
     ---------------
-        Главная функция запуска обучения.
-        Координирует сборку всех компонентов, запуск цикла обучения и
-        сохранение результатов. Может принимать конфиг программно или
-        использовать CLI аргументы.
+        Main training entry point. Coordinates component assembly,
+        training loop execution, and result saving. Can accept a config
+        programmatically or use CLI arguments.
 
     Args:
     ---------------
-        cfg: Optional[Dict[str, Any]] - Внешняя конфигурация.
-            Если None, используется default_config + CLI аргументы.
+        cfg: Optional[Dict[str, Any]] - External configuration.
+            If None, default_config + CLI arguments are used.
 
     Returns:
     ---------------
-        Dict[str, Any]: Финальные метрики валидации.
+        Dict[str, Any]: Final validation metrics.
 
     Raises:
     ---------------
-        Exception: Любые ошибки в процессе обучения.
+        Exception: Any errors during training.
     """
-    # Обработка конфигурации
+    # Configuration handling.
     if cfg is None:
         args = parse_args()
         cfg = default_config()
         cfg['logging']['save_attn'] = bool(args.save_attn)
     else:
-        cfg = dict(cfg)  # Создаем копию, чтобы не менять оригинал
+        cfg = dict(cfg)  # Create a copy to avoid mutating the original.
         cfg.setdefault('logging', {})
         cfg['logging'].setdefault('save_attn', False)
 
@@ -665,7 +664,7 @@ def main(cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     set_seed(cfg['seed'])
     device = torch.device(cfg['device'])
 
-    # Сборка пайплайна
+    # Pipeline assembly.
     train_loader, val_loader, train_labels, n_channels, n_subjects = (
         build_loaders(cfg)
     )
@@ -673,7 +672,7 @@ def main(cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     criterion = build_criterion(cfg, train_labels).to(device)
     optimizer, scheduler = build_optimizer_and_scheduler(model, cfg)
 
-    # Запуск обучения
+    # Run training.
     history, final_metrics, val_outputs, attn_stats = train_loop(
         model=model,
         train_loader=train_loader,
@@ -685,11 +684,11 @@ def main(cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         device=device
     )
 
-    # Вывод результатов
-    print("\nИтоговые метрики валидации (Fold 1):")
+    # Print results.
+    print("\nFinal validation metrics (Fold 1):")
     print_metrics(final_metrics)
 
-    # Сохранение артефактов (модель, логи, графики)
+    # Save artifacts (model, logs, plots).
     save_artifacts(
         cfg,
         final_metrics,
@@ -699,7 +698,7 @@ def main(cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         model
     )
 
-    print("\nОБУЧЕНИЕ PHASE 4B ЗАВЕРШЕНО")
+    print("\nPHASE 4B TRAINING COMPLETE")
     return final_metrics
 
 

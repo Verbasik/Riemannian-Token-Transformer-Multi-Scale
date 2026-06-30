@@ -4,25 +4,24 @@
 Full K-Fold Cross-Validation with Subject-Aware CV
 =================================================================
 
-Запускает полную оценку по протоколу из `cfg['cv']['protocol']`.
-Поддерживаются два верхнеуровневых пайплайна:
-- SI: одна общая модель на всех субъектов с subject embeddings.
-- SD: отдельная модель для каждого субъекта.
-Собирает метрики и проводит статистический анализ с доверительными
-интервалами.
+Runs full evaluation according to the protocol in `cfg['cv']['protocol']`.
+Two top-level pipelines are supported:
+- SI: one shared model across all subjects with subject embeddings.
+- SD: a separate model for each subject.
+Collects metrics and performs statistical analysis with confidence intervals.
 
-Возможности:
-- ✅ SI pooled personalized model: общая RTTMultiScale + subject embeddings
-- ✅ SD per-subject models: отдельная RTTMultiScale на каждого субъекта
-- ✅ Bootstrap 95% доверительные интервалы
-- ✅ Тест знаковых рангов Уилкоксона (Wilcoxon signed-rank)
-- ✅ Поправка Бенджамини-Хохберга на множественное тестирование (FDR)
-- ✅ Анализ по каждому субъекту и фолду
+Features:
+- ✅ SI pooled personalized model: shared RTTMultiScale + subject embeddings
+- ✅ SD per-subject models: separate RTTMultiScale per subject
+- ✅ Bootstrap 95% confidence intervals
+- ✅ Wilcoxon signed-rank test
+- ✅ Benjamini-Hochberg correction for multiple testing (FDR)
+- ✅ Per-subject and per-fold analysis
 
-Использование:
+Usage:
     python3 run_full_evaluation.py
 
-Выходные данные:
+Outputs:
     Train/results/full_evaluation/
     ├── results_detailed.json
     ├── results_summary.json
@@ -59,17 +58,17 @@ import numpy as np
 # =============================================================================
 # Local Imports
 # =============================================================================
-# Добавляем директорию Pipeline в путь поиска
+# Add the Pipeline directory to the import path.
 sys.path.insert(0, 'Pipeline')
 
-# Игнорирование предупреждений UserWarning для чистоты вывода
+# Ignore UserWarning warnings to keep output clean.
 warnings.filterwarnings('ignore', category=UserWarning)
 
 from config import default_config
 from train import main as train_main
 
 # =============================================================================
-# Configuration (Константы)
+# Configuration constants
 # =============================================================================
 
 SUBJECTS: List[str] = ['sub-01', 'sub-02', 'sub-03', 'sub-04', 'sub-05']
@@ -86,15 +85,15 @@ def _resolve_requested_pipelines(value: Any) -> List[str]:
     """
     Description:
     ---------------
-        Нормализует cfg['evaluation']['pipeline'] в список пайплайнов.
+        Normalizes cfg['evaluation']['pipeline'] into a pipeline list.
 
     Args:
     ---------------
-        value: str | Sequence[str] - si / sd / both или список.
+        value: str | Sequence[str] - si / sd / both or a list.
 
     Returns:
     ---------------
-        List[str]: Пайплайны в порядке запуска.
+        List[str]: Pipelines in execution order.
     """
     if value is None:
         value = 'both'
@@ -118,7 +117,7 @@ def _resolve_requested_pipelines(value: Any) -> List[str]:
             f"Expected one of {sorted(PIPELINE_NAMES)} or 'both'."
         )
 
-    # Сохраняем порядок, но удаляем дубли.
+    # Preserve order while removing duplicates.
     unique: List[str] = []
     for item in requested:
         if item not in unique:
@@ -130,7 +129,7 @@ def _experiment_slug(experiment_cfg: Dict[str, Any]) -> str:
     """
     Description:
     ---------------
-        Возвращает стабильный slug для каталогов артефактов эксперимента.
+        Returns a stable slug for experiment artifact directories.
     """
     pipeline = experiment_cfg['pipeline']
     subject = str(experiment_cfg['subject']).replace('/', '_')
@@ -142,22 +141,22 @@ def build_experiment_plan(base_cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     Description:
     ---------------
-        Строит план запуска двух сравниваемых пайплайнов:
-        - SI: одна общая RTTMultiScale на всех субъектах + subject embeddings.
-        - SD: отдельная RTTMultiScale на каждый subject_id.
+        Builds the execution plan for the two compared pipelines:
+        - SI: one shared RTTMultiScale across all subjects + subject embeddings.
+        - SD: a separate RTTMultiScale for each subject_id.
 
-        Оба пайплайна используют within-subject CV внутри своей области данных,
-        чтобы subject embeddings в SI обучались только на train-samples
-        соответствующих субъектов, а SD оценивался на held-out samples того же
-        субъекта.
+        Both pipelines use within-subject CV within their own data scope so
+        SI subject embeddings are trained only on train samples from the
+        corresponding subjects, while SD is evaluated on held-out samples
+        from the same subject.
 
     Args:
     ---------------
-        base_cfg: Dict[str, Any] - Базовая конфигурация.
+        base_cfg: Dict[str, Any] - Base configuration.
 
     Returns:
     ---------------
-        List[Dict[str, Any]]: Список экспериментов для run_full_evaluation().
+        List[Dict[str, Any]]: Experiment list for run_full_evaluation().
     """
     subjects = list(base_cfg['data'].get('subject_ids', SUBJECTS))
     cv_cfg = base_cfg.get('cv', {})
@@ -208,14 +207,14 @@ def build_experiment_plan(base_cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 # =============================================================================
-# Main Training Loop (Основной цикл обучения)
+# Main training loop
 # =============================================================================
 
 def parse_args() -> argparse.Namespace:
     """
     Description:
     ---------------
-        Парсит CLI аргументы для full evaluation.
+        Parses CLI arguments for full evaluation.
     """
     parser = argparse.ArgumentParser(
         description="Run SI/SD full evaluation for RTTMultiScale."
@@ -238,20 +237,20 @@ def run_full_evaluation(
     """
     Description:
     ---------------
-        Запускает полную оценку согласно cfg['evaluation']['pipeline']:
-        - si: одна pooled personalized модель на всех субъектах.
-        - sd: отдельная модель на каждого субъекта.
-        - both: последовательно si и sd.
-        Собирает метрики для последующего статистического анализа.
+        Runs full evaluation according to cfg['evaluation']['pipeline']:
+        - si: one pooled personalized model across all subjects.
+        - sd: a separate model for each subject.
+        - both: si and sd sequentially.
+        Collects metrics for subsequent statistical analysis.
 
     Returns:
     ---------------
-        Dict[str, Any]: Словарь с детальными результатами для каждой
-            комбинации протокол/fold.
+        Dict[str, Any]: Dictionary with detailed results for each
+            protocol/fold combination.
 
     Raises:
     ---------------
-        Нет явных исключений (ошибки ловятся внутри цикла).
+        No explicit exceptions (errors are caught inside the loop).
 
     Examples:
     ---------------
@@ -413,7 +412,7 @@ def run_full_evaluation(
 
 
 # =============================================================================
-# Statistical Analysis (Статистический анализ)
+# Statistical analysis
 # =============================================================================
 
 def extract_metric_per_fold(
@@ -423,20 +422,20 @@ def extract_metric_per_fold(
     """
     Description:
     ---------------
-        Извлекает конкретную метрику для каждого субъекта по всем фолдам.
+        Extracts a specific metric for each subject across all folds.
 
     Args:
     ---------------
-        results: Dict[str, Any] - Результаты из run_full_evaluation().
-        metric_name: str - Имя метрики ('f1_macro', 'accuracy' и т.д.).
+        results: Dict[str, Any] - Results from run_full_evaluation().
+        metric_name: str - Metric name ('f1_macro', 'accuracy', etc.).
 
     Returns:
     ---------------
-        Dict[str, np.ndarray]: Словарь {subject_id -> array значений}.
+        Dict[str, np.ndarray]: Dictionary {subject_id -> value array}.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
     """
     metric_per_subject: Dict[str, np.ndarray] = {}
     subjects = results.get('metadata', {}).get('subjects', SUBJECTS)
@@ -462,16 +461,16 @@ def extract_metric_per_pipeline(
     """
     Description:
     ---------------
-        Извлекает метрику отдельно для SI и SD пайплайнов.
+        Extracts a metric separately for SI and SD pipelines.
 
     Args:
     ---------------
-        results: Dict[str, Any] - Результаты из run_full_evaluation().
-        metric_name: str - Имя метрики.
+        results: Dict[str, Any] - Results from run_full_evaluation().
+        metric_name: str - Metric name.
 
     Returns:
     ---------------
-        Dict[str, np.ndarray]: Словарь {pipeline -> array значений}.
+        Dict[str, np.ndarray]: Dictionary {pipeline -> value array}.
     """
     values_by_pipeline: Dict[str, List[float]] = {}
 
@@ -502,14 +501,14 @@ def bootstrap_ci(
     """
     Description:
     ---------------
-        Вычисляет бутстрэп доверительный интервал для среднего значения.
-        Использует ресемплинг с возвращением для оценки распределения среднего.
+        Computes a bootstrap confidence interval for the mean.
+        Uses resampling with replacement to estimate the mean distribution.
 
     Args:
     ---------------
-        data: np.ndarray - Одномерный массив значений.
-        n_bootstrap: int - Количество бутстрэп выборок.
-        ci: float - Уровень доверия в процентах (например, 95).
+        data: np.ndarray - One-dimensional value array.
+        n_bootstrap: int - Number of bootstrap samples.
+        ci: float - Confidence level in percent (for example, 95).
 
     Returns:
     ---------------
@@ -517,12 +516,12 @@ def bootstrap_ci(
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
     """
     mean = float(np.mean(data))
     bootstrap_means: List[float] = []
 
-    np.random.seed(42)  # Фиксация seed для воспроизводимости CI
+    np.random.seed(42)  # Fixed seed for CI reproducibility.
     for _ in range(n_bootstrap):
         sample = np.random.choice(data, size=len(data), replace=True)
         bootstrap_means.append(float(np.mean(sample)))
@@ -542,13 +541,13 @@ def wilcoxon_test(
     """
     Description:
     ---------------
-        Выполняет тест знаковых рангов Уилкоксона для парных выборок.
-        Используется для проверки значимости различий между субъектами.
+        Runs the Wilcoxon signed-rank test for paired samples.
+        Used to test the significance of differences between subjects.
 
     Args:
     ---------------
-        group1: np.ndarray - Значения первой группы.
-        group2: np.ndarray - Значения второй группы.
+        group1: np.ndarray - Values of the first group.
+        group2: np.ndarray - Values of the second group.
 
     Returns:
     ---------------
@@ -556,7 +555,7 @@ def wilcoxon_test(
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
     """
     from scipy import stats
     statistic, p_value = stats.wilcoxon(group1, group2)
@@ -570,21 +569,21 @@ def benjamini_hochberg_correction(
     """
     Description:
     ---------------
-        Применяет поправку Бенджамини-Хохберга для контроля FDR
-        при множественном тестировании гипотез.
+        Applies the Benjamini-Hochberg correction to control FDR during
+        multiple hypothesis testing.
 
     Args:
     ---------------
-        p_values: List[float] - Список p-значений.
-        fdr: float - Порог False Discovery Rate.
+        p_values: List[float] - List of p-values.
+        fdr: float - False Discovery Rate threshold.
 
     Returns:
     ---------------
-        List[bool]: Список булевых флагов значимости после коррекции.
+        List[bool]: List of boolean significance flags after correction.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
     """
     n = len(p_values)
     if n == 0:
@@ -593,13 +592,13 @@ def benjamini_hochberg_correction(
     sorted_indices = np.argsort(p_values)
     sorted_p = np.array(p_values)[sorted_indices]
 
-    # Вычисление порогов: (i / m) * alpha
+    # Compute thresholds: (i / m) * alpha.
     ranks = np.arange(1, n + 1)
     thresholds = (ranks / n) * fdr
 
     significant = np.zeros(n, dtype=bool)
 
-    # Поиск наибольшего i, где P(i) <= порогу
+    # Find the largest i where P(i) <= threshold.
     for i in range(n - 1, -1, -1):
         if sorted_p[i] <= thresholds[i]:
             significant[sorted_indices[:i + 1]] = True
@@ -614,23 +613,23 @@ def perform_statistical_analysis(
     """
     Description:
     ---------------
-        Выполняет комплексный статистический анализ результатов:
-        1. Общее резюме по всем экспериментам.
-        2. Анализ по каждому субъекту.
-        3. Бутстрэп доверительные интервалы.
-        4. Построчные сравнения (Wilcoxon) с поправкой на множественность.
+        Performs comprehensive statistical analysis of results:
+        1. Overall summary across all experiments.
+        2. Per-subject analysis.
+        3. Bootstrap confidence intervals.
+        4. Pairwise comparisons (Wilcoxon) with multiplicity correction.
 
     Args:
     ---------------
-        results: Dict[str, Any] - Результаты из run_full_evaluation().
+        results: Dict[str, Any] - Results from run_full_evaluation().
 
     Returns:
     ---------------
-        Dict[str, Any]: Словарь со статистическим анализом.
+        Dict[str, Any]: Statistical analysis dictionary.
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
     """
     analysis: Dict[str, Any] = {
         'timestamp': datetime.now().isoformat(),
@@ -647,7 +646,7 @@ def perform_statistical_analysis(
     ]
 
     # ===========================================================================
-    # 1. Overall Summary (Общее резюме)
+    # 1. Overall summary
     # ===========================================================================
     print("\n" + "=" * 100)
     print("STATISTICAL ANALYSIS")
@@ -683,7 +682,7 @@ def perform_statistical_analysis(
             )
 
     # ===========================================================================
-    # 2. Per-Pipeline Analysis (Сравнение SI/SD)
+    # 2. Per-pipeline analysis (SI/SD comparison)
     # ===========================================================================
     print("\n" + "=" * 100)
     print("PER-PIPELINE ANALYSIS")
@@ -719,7 +718,7 @@ def perform_statistical_analysis(
                 )
 
     # ===========================================================================
-    # 3. Per-Subject Analysis (Анализ по субъектам)
+    # 3. Per-subject analysis
     # ===========================================================================
     print("\n" + "=" * 100)
     print("PER-SUBJECT ANALYSIS")
@@ -750,7 +749,7 @@ def perform_statistical_analysis(
             print(f"  Folds: [{folds_str}]")
 
     # ===========================================================================
-    # 4. Bootstrap Confidence Intervals (Доверительные интервалы)
+    # 4. Bootstrap confidence intervals
     # ===========================================================================
     print("\n" + "=" * 100)
     print("BOOTSTRAP CONFIDENCE INTERVALS (95%)")
@@ -762,7 +761,7 @@ def perform_statistical_analysis(
         for subject_id in subjects:
             if subject_id in metric_map:
                 values = metric_map[subject_id]
-                # Увеличиваем число итераций для точности CI
+                # Increase the number of iterations for CI precision.
                 mean_val, lower, upper = bootstrap_ci(values, n_bootstrap=5000)
                 key = f"{subject_id}_{metric}"
                 analysis['bootstrap_ci'][key] = {
@@ -772,7 +771,7 @@ def perform_statistical_analysis(
                 print(f"  {subject_id}: {mean_val:.4f} [{lower:.4f}, {upper:.4f}]")
 
     # ===========================================================================
-    # 5. Wilcoxon Tests (Попарные сравнения)
+    # 5. Wilcoxon tests (pairwise comparisons)
     # ===========================================================================
     print("\n" + "=" * 100)
     print("WILCOXON SIGNED-RANK TESTS (Subject Comparisons)")
@@ -789,7 +788,7 @@ def perform_statistical_analysis(
             values1 = metric_per_subject[subj1]
             values2 = metric_per_subject[subj2]
 
-            # Сравнение возможно только при одинаковой длине выборок
+            # Comparison is possible only with equal sample lengths.
             if len(values1) == len(values2):
                 stat, p_val = wilcoxon_test(values1, values2)
                 p_values.append(p_val)
@@ -799,7 +798,7 @@ def perform_statistical_analysis(
                     'p_value': p_val,
                 })
 
-    # Применение поправки Бенджамини-Хохберга
+    # Apply the Benjamini-Hochberg correction.
     if p_values:
         significant = benjamini_hochberg_correction(p_values, fdr=0.05)
         print("\nPairwise Comparisons (F1-macro):")
@@ -818,7 +817,7 @@ def perform_statistical_analysis(
 
 
 # =============================================================================
-# Results Saving (Сохранение результатов)
+# Results saving
 # =============================================================================
 
 def save_results(
@@ -828,16 +827,16 @@ def save_results(
     """
     Description:
     ---------------
-        Сохраняет детальные результаты и статистический анализ в файлы:
-        - JSON с полными данными.
-        - JSON с кратким резюме.
-        - JSON со статистикой.
-        - TXT отчет для человека.
+        Saves detailed results and statistical analysis to files:
+        - JSON with full data.
+        - JSON with a short summary.
+        - JSON with statistics.
+        - Human-readable TXT report.
 
     Args:
     ---------------
-        detailed_results: Dict[str, Any] - Результаты обучения.
-        analysis: Dict[str, Any] - Результаты статистики.
+        detailed_results: Dict[str, Any] - Training results.
+        analysis: Dict[str, Any] - Statistical results.
 
     Returns:
     ---------------
@@ -845,17 +844,17 @@ def save_results(
 
     Raises:
     ---------------
-        Нет явных исключений.
+        No explicit exceptions.
     """
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Сохранение детальных результатов
+    # Save detailed results.
     detailed_path = RESULTS_DIR / 'results_detailed.json'
     with open(detailed_path, 'w', encoding='utf-8') as f:
         json.dump(detailed_results, f, indent=2, ensure_ascii=False)
     print(f"✅ Saved: {detailed_path}")
 
-    # Сохранение резюме
+    # Save summary.
     summary_path = RESULTS_DIR / 'results_summary.json'
     summary = {
         'metadata': detailed_results['metadata'],
@@ -867,13 +866,13 @@ def save_results(
         json.dump(summary, f, indent=2, ensure_ascii=False)
     print(f"✅ Saved: {summary_path}")
 
-    # Сохранение статистического анализа
+    # Save statistical analysis.
     analysis_path = RESULTS_DIR / 'statistical_analysis.json'
     with open(analysis_path, 'w', encoding='utf-8') as f:
         json.dump(analysis, f, indent=2, ensure_ascii=False)
     print(f"✅ Saved: {analysis_path}")
 
-    # Генерация текстового отчета
+    # Generate text report.
     report_path = RESULTS_DIR / 'statistical_analysis.txt'
     with open(report_path, 'w', encoding='utf-8') as f:
         f.write("FULL K-FOLD CROSS-VALIDATION STATISTICAL REPORT\n")
@@ -941,39 +940,39 @@ def main(pipeline_override: Optional[str] = None) -> bool:
     """
     Description:
     ---------------
-        Главная точка входа для пайплайна полной оценки.
-        Выполняет три фазы: Обучение, Статистика, Сохранение.
+        Main entry point for the full evaluation pipeline.
+        Runs three phases: training, statistics, saving.
 
     Returns:
     ---------------
-        bool: True если успешно, False если произошла ошибка.
+        bool: True on success, False if an error occurred.
 
     Raises:
     ---------------
-        RuntimeError: Если ни один эксперимент не завершился успешно.
+        RuntimeError: If no experiment completed successfully.
     """
     try:
-        # Phase 1: Обучение
+        # Phase 1: Training
         detailed_results = run_full_evaluation(pipeline_override)
 
         success_exp = detailed_results['metadata'].get('success_experiments', 0)
         if success_exp == 0:
             raise RuntimeError(
-                "Нет успешных экспериментов: проверьте cfg['data']['data_dir'] "
-                "и наличие каталогов "
+                "No successful experiments: check cfg['data']['data_dir'] "
+                "and the presence of directories "
                 "/mnt/data/derivatives/preprocessed_pkl/sub-*/eeg/*.pkl"
             )
 
-        # Phase 2: Статистический анализ
+        # Phase 2: Statistical analysis
         analysis = perform_statistical_analysis(detailed_results)
 
-        # Phase 3: Сохранение результатов
+        # Phase 3: Save results
         print("\n" + "=" * 100)
         print("SAVING RESULTS")
         print("=" * 100)
         save_results(detailed_results, analysis)
 
-        # Phase 4: Генерация визуализаций
+        # Phase 4: Generate visualizations
         print("\n" + "=" * 100)
         print("GENERATING VISUALIZATIONS")
         print("=" * 100)
@@ -981,9 +980,9 @@ def main(pipeline_override: Optional[str] = None) -> bool:
             from visualization import save_full_eval_plots
             save_full_eval_plots(detailed_results, analysis, RESULTS_DIR)
         except Exception as exc:
-            print(f'[viz] Визуализация пропущена: {exc}')
+            print(f'[viz] Visualization skipped: {exc}')
 
-        # Финальное резюме
+        # Final summary
         print("\n" + "=" * 100)
         print("🎉 FULL EVALUATION PIPELINE COMPLETED SUCCESSFULLY")
         print("=" * 100)
